@@ -85,6 +85,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Keep the message channel open for async response
 });
 
+// ── Streaming Port Connection Handler (Slice 2.1) ──────────────────────
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'chat-stream' && port.name !== 'stream') {
+    return;
+  }
+
+  let abortController = new AbortController();
+
+  port.onDisconnect.addListener(() => {
+    // Edge case 2.1.5: streaming port disconnects mid-response
+    console.log('[Sahayak] Chat stream port disconnected by client. Aborting in-flight AI stream.');
+    abortController.abort();
+  });
+
+  port.onMessage.addListener(async (msg) => {
+    if (!msg || msg.type !== 'CHAT_QUERY') return;
+
+    if (abortController.signal.aborted) {
+      abortController = new AbortController();
+    }
+
+    try {
+      await handleChatStreamQuery(msg, port, abortController.signal);
+    } catch (err) {
+      console.error('[Sahayak] Chat stream query error:', err);
+      try {
+        port.postMessage({
+          type: 'STREAM_ERROR',
+          error: {
+            code: err.code || 'STREAM_ERROR',
+            message: err.message || 'An error occurred while streaming response.'
+          }
+        });
+      } catch (postErr) {
+        // Port may be closed
+      }
+    }
+  });
+});
+
 /**
  * Route an incoming message to the appropriate handler.
  */
@@ -190,6 +230,11 @@ async function handleMessage(message, sender) {
 
     case 'SEEK_VIDEO': {
       return await handleSeekVideo(message.payload || {});
+    }
+
+    // ── Grounded Page Chat (Slice 2.1) ───────────────────────
+    case 'CHAT_QUERY': {
+      return await handleChatQuery(message.payload || {});
     }
 
     // ── Health Check ─────────────────────────────────────────
@@ -638,6 +683,190 @@ function extractVideoId(url) {
     if (match) return match[1];
   }
   return null;
+}
+
+/**
+ * Handle streaming grounded chat query over long-lived port.
+ * Architecture §8 & Slice 2.1.
+ */
+async function handleChatStreamQuery(msg, port, signal) {
+  const { question, history = [], language, tabId: requestedTabId } = msg;
+
+  if (!question || !question.trim()) {
+    port.postMessage({
+      type: 'STREAM_ERROR',
+      error: { code: 'EMPTY_QUESTION', message: 'Please enter a question to ask.' }
+    });
+    return;
+  }
+
+  // 1. Resolve active tab
+  let tab;
+  if (requestedTabId) {
+    try {
+      tab = await chrome.tabs.get(requestedTabId);
+    } catch (e) {}
+  }
+  if (!tab) {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    tab = activeTab;
+  }
+
+  if (!tab || !tab.id) {
+    port.postMessage({
+      type: 'STREAM_ERROR',
+      error: { code: 'NO_TAB', message: 'No active browser tab found to chat with.' }
+    });
+    return;
+  }
+
+  if (isRestrictedUrl(tab.url)) {
+    port.postMessage({
+      type: 'STREAM_ERROR',
+      error: { code: 'RESTRICTED_URL', message: 'Cannot chat with internal browser or system pages.' }
+    });
+    return;
+  }
+
+  // 2. Extract page content
+  let pageContext = {
+    title: tab.title || 'Web Page',
+    url: tab.url,
+    content: ''
+  };
+
+  try {
+    await ensureContentScriptInjected(tab.id);
+
+    if (isYouTubeUrl(tab.url)) {
+      // YouTube page chat — extract transcript if available
+      try {
+        const captionsRes = await chrome.tabs.sendMessage(tab.id, { type: 'GET_YOUTUBE_CAPTIONS' });
+        if (captionsRes?.success && captionsRes.data?.captionsText) {
+          pageContext.content = captionsRes.data.captionsText;
+          pageContext.title = captionsRes.data.title || tab.title;
+        } else {
+          pageContext.content = `YouTube video title: ${tab.title}. URL: ${tab.url}`;
+        }
+      } catch (ytErr) {
+        pageContext.content = `YouTube video: ${tab.title}`;
+      }
+    } else {
+      // Standard article extraction
+      const extractRes = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_ARTICLE' });
+      if (extractRes?.success && extractRes.data?.content) {
+        pageContext.content = extractRes.data.content;
+        pageContext.title = extractRes.data.title || tab.title;
+      } else {
+        pageContext.content = tab.title || '';
+      }
+    }
+  } catch (extractErr) {
+    console.warn('[Sahayak] Chat content extraction warning:', extractErr.message);
+    pageContext.content = tab.title || '';
+  }
+
+  // Edge case 2.1.2: page has very little text (< 50 words)
+  const wordCount = pageContext.content.split(/\s+/).filter(Boolean).length;
+  const isLowContent = wordCount < 50;
+
+  // 3. Language preference
+  let lang = language;
+  if (!lang) {
+    const prefs = await chrome.storage.local.get('sahayak_preferences');
+    lang = prefs.sahayak_preferences?.language || 'en';
+  }
+
+  // 4. Build grounded chat prompt
+  const { systemPrompt, userPrompt } = PromptBuilder.buildGroundedChatPrompt(
+    pageContext,
+    question,
+    history,
+    lang
+  );
+
+  // 5. Stream from Model Gateway
+  const aiResult = await ModelGateway.streamAI({
+    prompt: userPrompt,
+    systemPrompt,
+    task: 'text',
+    temperature: 0.2, // Low temperature for strict factual grounding
+    maxTokens: 2048,
+    signal,
+    onChunk: (chunk) => {
+      try {
+        port.postMessage({ type: 'STREAM_CHUNK', chunk });
+      } catch (err) {
+        // Port closed
+      }
+    }
+  });
+
+  // 6. Complete stream
+  try {
+    port.postMessage({
+      type: 'STREAM_DONE',
+      fullText: aiResult.text,
+      model: aiResult.model,
+      provider: aiResult.provider,
+      lowContent: isLowContent
+    });
+  } catch (err) {
+    // Port closed
+  }
+}
+
+/**
+ * Handle non-streaming chat query (fallback).
+ */
+async function handleChatQuery(payload = {}) {
+  const { question, history = [], language } = payload;
+  if (!question || !question.trim()) {
+    return { success: false, error: { code: 'EMPTY_QUESTION', message: 'Please enter a question to ask.' } };
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) {
+    return { success: false, error: { code: 'NO_TAB', message: 'No active tab found.' } };
+  }
+  if (isRestrictedUrl(tab.url)) {
+    return { success: false, error: { code: 'RESTRICTED_URL', message: 'Cannot chat with internal browser or system pages.' } };
+  }
+
+  let pageContext = { title: tab.title, url: tab.url, content: '' };
+  try {
+    await ensureContentScriptInjected(tab.id);
+    const extractRes = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_ARTICLE' });
+    if (extractRes?.success && extractRes.data?.content) {
+      pageContext.content = extractRes.data.content;
+      pageContext.title = extractRes.data.title || tab.title;
+    }
+  } catch (err) {}
+
+  let lang = language;
+  if (!lang) {
+    const prefs = await chrome.storage.local.get('sahayak_preferences');
+    lang = prefs.sahayak_preferences?.language || 'en';
+  }
+
+  const { systemPrompt, userPrompt } = PromptBuilder.buildGroundedChatPrompt(pageContext, question, history, lang);
+  const aiResult = await ModelGateway.queryAI({
+    prompt: userPrompt,
+    systemPrompt,
+    task: 'text',
+    temperature: 0.2,
+    maxTokens: 2048
+  });
+
+  return {
+    success: true,
+    data: {
+      text: aiResult.text,
+      model: aiResult.model,
+      provider: aiResult.provider,
+      lowContent: (pageContext.content.split(/\s+/).filter(Boolean).length < 50)
+    }
+  };
 }
 
 /**

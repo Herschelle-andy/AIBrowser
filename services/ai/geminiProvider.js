@@ -269,6 +269,136 @@ function extractText(data) {
 }
 
 /**
+ * Stream responses from Gemini via streamGenerateContent?alt=sse.
+ * Decodes Server-Sent Events line by line and yields chunks in real-time.
+ *
+ * @param {string} apiKey
+ * @param {string} model
+ * @param {string} prompt
+ * @param {Object} [options]
+ * @param {string} [options.systemPrompt]
+ * @param {number} [options.temperature]
+ * @param {number} [options.maxOutputTokens]
+ * @param {AbortSignal} [options.signal]
+ * @param {function(string): void} [onChunk] - Invoked for each decoded text chunk
+ * @returns {Promise<{text: string, model: string}>}
+ * @throws {AIProviderError}
+ */
+async function streamGemini(apiKey, model, prompt, options = {}, onChunk = null) {
+  const {
+    systemPrompt = null,
+    temperature = 0.3,
+    maxOutputTokens = 2048,
+    signal = null,
+  } = options;
+
+  const payload = {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }]
+      }
+    ],
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+    }
+  };
+
+  if (systemPrompt) {
+    payload.systemInstruction = {
+      parts: [{ text: systemPrompt }]
+    };
+  }
+
+  const cleanModel = model.replace(/^models\//, '');
+  const url = `${GEMINI_BASE_URL}/${cleanModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new AIProviderError('Stream aborted by client.', 'ABORTED', null, true);
+    }
+    if (err instanceof TypeError) {
+      throw new AIProviderError(
+        'Network request failed. You appear to be offline or blocked.',
+        'NETWORK_ERROR', null, true
+      );
+    }
+    throw new AIProviderError(`Stream fetch error: ${err.message}`, 'UNKNOWN', null, false);
+  }
+
+  if (!response.ok) {
+    await handleHttpError(response);
+  }
+
+  if (!response.body) {
+    throw new AIProviderError('No readable stream in response body.', 'STREAM_ERROR', response.status, false);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let fullText = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Buffer partial line across chunks (edge case 2.1.6)
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+        const dataStr = trimmed.slice(5).trim();
+        if (dataStr === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          const candidate = parsed.candidates?.[0];
+
+          if (candidate?.finishReason === 'SAFETY') {
+            throw new AIProviderError(
+              'The model declined to complete this response due to safety filters.',
+              'SAFETY_BLOCK', null, false
+            );
+          }
+
+          const parts = candidate?.content?.parts || [];
+          const nonThought = parts.filter(p => p.text && !p.thought);
+          const partsToUse = nonThought.length > 0 ? nonThought : parts.filter(p => p.text);
+          const chunkText = partsToUse.map(p => p.text).join('');
+
+          if (chunkText) {
+            fullText += chunkText;
+            if (onChunk) onChunk(chunkText);
+          }
+        } catch (parseErr) {
+          if (parseErr instanceof AIProviderError) throw parseErr;
+          // Incomplete JSON boundary (edge case 2.1.6)
+          console.warn('[GeminiProvider] SSE parse warning:', parseErr.message);
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { text: fullText, model: cleanModel };
+}
+
+/**
  * Query the ListModels endpoint to get all generative models available for the key.
  *
  * @param {string} apiKey
@@ -289,5 +419,5 @@ async function listModels(apiKey) {
 
 // Export for use in service worker modules
 // (using globalThis since SW doesn't support ES module exports in all setups)
-globalThis.GeminiProvider = { callGemini, listModels, AIProviderError };
+globalThis.GeminiProvider = { callGemini, streamGemini, listModels, AIProviderError };
 

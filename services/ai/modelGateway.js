@@ -145,6 +145,66 @@ async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTo
 }
 
 /**
+ * Stream prompt responses from the AI provider chunk by chunk.
+ *
+ * @param {Object} params
+ * @param {string} params.prompt
+ * @param {string} [params.systemPrompt]
+ * @param {string} [params.task='text']
+ * @param {number} [params.temperature=0.3]
+ * @param {number} [params.maxTokens=2048]
+ * @param {AbortSignal} [params.signal]
+ * @param {function(string): void} params.onChunk
+ * @returns {Promise<{text: string, model: string, provider: string}>}
+ */
+async function streamAI({ prompt, systemPrompt, task = 'text', temperature = 0.3, maxTokens = 2048, signal = null, onChunk }) {
+  const keys = await getApiKeys();
+
+  if (!keys.geminiKey) {
+    throw new GeminiProvider.AIProviderError(
+      'No API key configured. Please add your Gemini API key in Settings.',
+      'NO_KEY', null, false
+    );
+  }
+
+  const initialModel = _discoveredWorkingModel || MODELS[task] || MODELS.text;
+  const modelsToTry = [
+    initialModel,
+    ...PREFERRED_CANDIDATES.filter(m => m !== initialModel)
+  ];
+
+  let lastError = null;
+
+  for (const model of modelsToTry) {
+    try {
+      const result = await GeminiProvider.streamGemini(keys.geminiKey, model, prompt, {
+        systemPrompt,
+        temperature,
+        maxOutputTokens: maxTokens,
+        signal,
+      }, onChunk);
+
+      _discoveredWorkingModel = model;
+
+      return {
+        text: result.text,
+        model: result.model,
+        provider: 'gemini',
+      };
+    } catch (err) {
+      lastError = err;
+      if (err.code === 'MODEL_NOT_FOUND') {
+        console.warn(`[ModelGateway] Stream: Model '${model}' returned 404. Trying next candidate...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
+}
+
+/**
  * Read stored API keys. Returns { geminiKey, groqKey }.
  */
 async function getApiKeys() {
@@ -160,5 +220,5 @@ function clearModelCache() {
 }
 
 // Export
-globalThis.ModelGateway = { queryAI, MODELS, clearModelCache };
+globalThis.ModelGateway = { queryAI, streamAI, MODELS, clearModelCache };
 

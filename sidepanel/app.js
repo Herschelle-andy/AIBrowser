@@ -46,16 +46,24 @@
       SummaryView.render(pageSummaryContainer);
     }
 
+    // Render the grounded chat view (Slice 2.1)
+    const chatViewContainer = document.getElementById('chat-view-container');
+    if (chatViewContainer && window.ChatView) {
+      ChatView.render(chatViewContainer);
+    }
+
     // Refresh active tab info when switching or updating tabs
     if (chrome.tabs && chrome.tabs.onActivated) {
       chrome.tabs.onActivated.addListener(() => {
         if (window.SummaryView) SummaryView.refreshActiveTabInfo();
+        if (window.ChatView) ChatView.updateActivePageInfo();
       });
     }
     if (chrome.tabs && chrome.tabs.onUpdated) {
       chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-        if ((changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) && window.SummaryView) {
-          SummaryView.refreshActiveTabInfo();
+        if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
+          if (window.SummaryView) SummaryView.refreshActiveTabInfo();
+          if (window.ChatView) ChatView.onTabChanged(tabId, changeInfo);
         }
       });
     }
@@ -99,6 +107,10 @@
       const isActive = panel.id === `tab-${tabName}`;
       panel.classList.toggle('active', isActive);
     });
+
+    if (tabName === 'chat' && window.ChatView) {
+      ChatView.updateActivePageInfo();
+    }
   }
 
   // ── Settings Modal ──────────────────────────────────────────────────

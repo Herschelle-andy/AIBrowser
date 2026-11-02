@@ -16,7 +16,7 @@
    * @returns {string}
    */
   function getLanguageInstruction(language = 'en') {
-    if (language === 'hi-en') {
+    if (language === 'hi-en' || language === 'hi') {
       return (
         'Respond in Hinglish — natural Hindi-English mix written strictly in Roman script. ' +
         'Keep technical and domain-specific terms in English. ' +
@@ -192,11 +192,139 @@
     };
   }
 
+  /**
+   * Split long document text into overlapping chunks and pick the most query-relevant chunks.
+   * Architecture §8.3 & Slice 2.1 step 5.
+   */
+  function chunkAndSelectContext(text, query, maxChars = 65000) {
+    if (!text || text.length <= maxChars) {
+      return text;
+    }
+
+    const chunkSize = 12000;
+    const overlap = 1000;
+    const chunks = [];
+    let start = 0;
+
+    while (start < text.length) {
+      const end = Math.min(start + chunkSize, text.length);
+      chunks.push(text.substring(start, end));
+      if (end === text.length) break;
+      start += (chunkSize - overlap);
+    }
+
+    if (chunks.length <= 4) {
+      return text.substring(0, maxChars) + '\n\n[...truncated to fit token limit]';
+    }
+
+    const stopWords = new Set(['the', 'and', 'for', 'are', 'this', 'that', 'with', 'from', 'what', 'when', 'where', 'which', 'who', 'how', 'why', 'can', 'you', 'page', 'about']);
+    const queryTerms = (query || '').toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
+    const validTerms = queryTerms.filter(t => !stopWords.has(t));
+
+    const scored = chunks.map((chunk, idx) => {
+      const lower = chunk.toLowerCase();
+      let score = 0;
+      if (idx === 0) score += 3; // Initial overview bonus
+      for (const term of validTerms) {
+        const matches = lower.split(term).length - 1;
+        score += Math.min(matches, 10);
+      }
+      return { idx, chunk, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const selected = scored.slice(0, 4);
+    selected.sort((a, b) => a.idx - b.idx); // Preserve reading order
+
+    const contextText = selected.map(s => s.chunk).join('\n\n[...]\n\n');
+    return `Note: This is a partial extract of a long page, focused on sections most relevant to your question.\n\n${contextText}`;
+  }
+
+  /**
+   * Format the last N conversation turns for grounding context.
+   * Edge case 2.1.3: limits history to last 8 turns to preserve context budget.
+   */
+  function formatConversationHistory(history = [], maxTurns = 8) {
+    if (!Array.isArray(history) || history.length === 0) return '';
+
+    const recent = history.slice(-maxTurns);
+    const formatted = recent.map(turn => {
+      const speaker = turn.role === 'user' ? 'User' : 'Assistant';
+      return `${speaker}: ${turn.text || ''}`;
+    }).join('\n\n');
+
+    return formatted ? `CONVERSATION HISTORY:\n${formatted}\n` : '';
+  }
+
+  /**
+   * Build grounded chat prompt with strict anti-hallucination rules.
+   * Architecture §8.2.
+   *
+   * @param {Object} pageContext
+   * @param {string} pageContext.title
+   * @param {string} pageContext.url
+   * @param {string} pageContext.content
+   * @param {string} question
+   * @param {Array<Object>} [history=[]]
+   * @param {string} [language='en']
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildGroundedChatPrompt(pageContext, question, history = [], language = 'en') {
+    const langRule = getLanguageInstruction(language);
+
+    const systemPrompt = [
+      'You are Sahayak, an intelligent browser assistant.',
+      'Answer the user\'s question using ONLY the text provided in <PAGE_CONTEXT>.',
+      'Do not use outside knowledge or extrapolate beyond the provided text.',
+      'If the answer cannot be found in the page context, you MUST respond exactly:',
+      '"This information is not available on the current page."',
+      langRule
+    ].join(' ');
+
+    // Clean user question & truncate to 500 words (Edge case 2.1.4)
+    let cleanQuestion = (question || '').trim();
+    const words = cleanQuestion.split(/\s+/).filter(Boolean);
+    if (words.length > 500) {
+      cleanQuestion = words.slice(0, 500).join(' ') + '\n\n[Note: Your question was trimmed to 500 words.]';
+    }
+
+    const fullText = pageContext.content || pageContext.textContent || '';
+    const selectedContext = chunkAndSelectContext(fullText, cleanQuestion);
+
+    const metadata = [];
+    if (pageContext.title) metadata.push(`Title: ${pageContext.title}`);
+    if (pageContext.url) metadata.push(`URL: ${pageContext.url}`);
+
+    const historyBlock = formatConversationHistory(history, 8);
+
+    const userPrompt = [
+      '<PAGE_CONTEXT>',
+      metadata.join('\n'),
+      '',
+      selectedContext,
+      '</PAGE_CONTEXT>',
+      '',
+      historyBlock,
+      'USER QUESTION:',
+      cleanQuestion,
+      '',
+      'Remember: Answer strictly using facts stated in <PAGE_CONTEXT>. If not present, state that the information is not available on the current page.'
+    ].filter(Boolean).join('\n');
+
+    return {
+      systemPrompt,
+      userPrompt
+    };
+  }
+
   // Export
   globalThis.PromptBuilder = {
     getLanguageInstruction,
     buildSummaryPrompt,
-    buildYouTubePrompt
+    buildYouTubePrompt,
+    buildGroundedChatPrompt,
+    chunkAndSelectContext,
+    formatConversationHistory
   };
 })();
 
