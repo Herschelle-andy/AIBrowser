@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahayak</title>
+  <link rel="stylesheet" href="styles/panel.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Header ─────────────────────────────────────────── -->
+    <header class="panel-header">
+      <div class="header-left">
+        <h1 class="logo">🤖 Sahayak</h1>
+        <div class="lang-toggle" title="Switch output language">
+          <button id="btn-lang-en" class="lang-btn active" data-lang="en">EN</button>
+          <button id="btn-lang-hi" class="lang-btn" data-lang="hi-en">हिंग्लिश</button>
+        </div>
+      </div>
+      <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Open settings">
+        ⚙️
+      </button>
+    </header>
+
+    <!-- ── API Key Banner (shown when no key is set) ──────── -->
+    <div id="api-key-banner" class="banner banner-warning" style="display: none;">
+      <span>⚠️ Add your Gemini API key in Settings to get started.</span>
+      <button id="banner-settings-btn" class="banner-link">Open Settings</button>
+    </div>
+
+    <!-- ── Tab Navigation ─────────────────────────────────── -->
+    <nav class="tab-nav" role="tablist">
+      <button class="tab-btn active" data-tab="summary" role="tab" aria-selected="true">
+        📄 Summary
+      </button>
+      <button class="tab-btn" data-tab="chat" role="tab" aria-selected="false">
+        💬 Chat
+      </button>
+      <button class="tab-btn" data-tab="agent" role="tab" aria-selected="false">
+        🤖 Agent
+      </button>
+      <button class="tab-btn" data-tab="screenshot" role="tab" aria-selected="false">
+        📸 Vision
+      </button>
+      <button class="tab-btn" data-tab="profile" role="tab" aria-selected="false">
+        👤 Profile
+      </button>
+      <button class="tab-btn" data-tab="skills" role="tab" aria-selected="false">
+        ⚡ Skills
+      </button>
+    </nav>
+
+    <!-- ── Tab Content Panels ─────────────────────────────── -->
+    <main class="tab-content">
+
+      <section id="tab-summary" class="tab-panel active" role="tabpanel">
+        <!-- Explain Text UI -->
+        <div class="explain-section">
+          <h3 class="section-title">✨ Explain Text</h3>
+          <p class="section-desc">Select text on any page and paste it here, or it will auto-fill when you use the right-click menu (coming soon).</p>
+          <textarea
+            id="explain-input"
+            class="form-input explain-textarea"
+            placeholder="Paste or type text here to explain..."
+            rows="5"
+            maxlength="5000"
+          ></textarea>
+          <div class="explain-actions">
+            <span id="explain-char-count" class="char-count">0 / 5000</span>
+            <button id="btn-explain" class="btn btn-primary">
+              🧠 Explain This
+            </button>
+          </div>
+        </div>
+
+        <!-- Result Area -->
+        <div id="explain-result" class="result-area" style="display: none;">
+          <div class="result-header">
+            <h3 class="section-title">📝 Explanation</h3>
+            <div class="result-actions">
+              <button id="btn-copy-result" class="btn btn-secondary btn-sm" title="Copy to clipboard">
+                📋 Copy
+              </button>
+              <button id="btn-clear-result" class="btn btn-secondary btn-sm" title="Clear result">
+                ✕
+              </button>
+            </div>
+          </div>
+          <div id="explain-result-text" class="result-text"></div>
+          <div id="explain-model-badge" class="model-badge"></div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="explain-loading" class="loading-area" style="display: none;">
+          <div class="loading-spinner"></div>
+          <span class="loading-text">Thinking…</span>
+        </div>
+
+        <!-- Error State -->
+        <div id="explain-error" class="error-area" style="display: none;">
+          <div id="explain-error-text" class="error-text"></div>
+          <button id="btn-retry-explain" class="btn btn-secondary btn-sm">🔄 Retry</button>
+        </div>
+
+        <!-- Page Summary Component Container -->
+        <hr class="section-divider" />
+        <div id="page-summary-container"></div>
+      </section>
+
+      <section id="tab-chat" class="tab-panel" role="tabpanel">
+        <div class="panel-placeholder">
+          <span class="placeholder-icon">💬</span>
+          <h2>Page Chat</h2>
+          <p>Chat with the current page. Coming in Slice 2.1.</p>
+        </div>
+      </section>
+
+      <section id="tab-agent" class="tab-panel" role="tabpanel">
+        <div class="panel-placeholder">
+          <span class="placeholder-icon">🤖</span>
+          <h2>Browser Agent</h2>
+          <p>Controlled browser actions with your approval. Coming in Slice 3.4.</p>
+        </div>
+      </section>
+
+      <section id="tab-screenshot" class="tab-panel" role="tabpanel">
+        <div class="panel-placeholder">
+          <span class="placeholder-icon">📸</span>
+          <h2>Screenshot &amp; Ask</h2>
+          <p>Ask questions about visible screen content. Coming in Slice 2.3.</p>
+        </div>
+      </section>
+
+      <section id="tab-profile" class="tab-panel" role="tabpanel">
+        <div class="panel-placeholder">
+          <span class="placeholder-icon">👤</span>
+          <h2>Your Profile</h2>
+          <p>Local profile memory for form-filling and drafts. Coming in Slice 4.1.</p>
+        </div>
+      </section>
+
+      <section id="tab-skills" class="tab-panel" role="tabpanel">
+        <div class="panel-placeholder">
+          <span class="placeholder-icon">⚡</span>
+          <h2>Saved Skills</h2>
+          <p>Reusable one-click prompt recipes. Coming in Slice 4.2.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ── Settings Modal ─────────────────────────────────── -->
+    <div id="settings-modal" class="modal-overlay" style="display: none;">
+      <div class="modal" role="dialog" aria-labelledby="settings-title">
+        <div class="modal-header">
+          <h2 id="settings-title">⚙️ Settings</h2>
+          <button id="btn-close-settings" class="icon-btn" aria-label="Close settings">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="settings-container">
+            <!-- Populated by SettingsView.js -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Scripts ──────────────────────────────────────────── -->
+  <script src="components/SettingsView.js"></script>
+  <script src="components/SummaryView.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
