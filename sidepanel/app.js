@@ -79,6 +79,18 @@
     // Load saved language preference
     await loadLanguagePreference();
 
+    // Check for pending context menu action (Slice 2.2 / Edge cases 2.2.1 & 2.2.4)
+    await checkPendingContextAction();
+
+    // Listen for live context action messages (Slice 2.2)
+    if (chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message && message.type === 'CONTEXT_ACTION') {
+          handleContextAction(message);
+        }
+      });
+    }
+
     console.log('[Sahayak] Side panel initialised.');
   }
 
@@ -234,12 +246,18 @@
     }
   }
 
-  // ── Explain Text (Slice 1.2) ─────────────────────────────────────────
+  // ── Quick Actions / Explain Text (Slice 1.2 & Slice 2.2) ────────────
+  let activeQuickAction = 'explain';
+
   function setupExplainText() {
     const explainInput = document.getElementById('explain-input');
     const charCount = document.getElementById('explain-char-count');
     const btnExplain = document.getElementById('btn-explain');
+    const btnTranslate = document.getElementById('btn-translate');
+    const btnDraftReply = document.getElementById('btn-draft-reply');
     const resultArea = document.getElementById('explain-result');
+    const resultTitle = document.getElementById('explain-result-title');
+    const truncationNotice = document.getElementById('explain-truncation-notice');
     const resultText = document.getElementById('explain-result-text');
     const modelBadge = document.getElementById('explain-model-badge');
     const btnCopy = document.getElementById('btn-copy-result');
@@ -252,28 +270,39 @@
     if (!explainInput || !btnExplain) return; // Guard — DOM not ready
 
     // Character counter
-    explainInput.addEventListener('input', () => {
+    function updateCharCount() {
       const len = explainInput.value.length;
       charCount.textContent = `${len} / 5000`;
       charCount.classList.toggle('near-limit', len >= 4000 && len < 5000);
       charCount.classList.toggle('at-limit', len >= 5000);
-    });
+    }
 
-    // Explain button
-    btnExplain.addEventListener('click', () => handleExplain());
+    explainInput.addEventListener('input', updateCharCount);
 
-    // Ctrl+Enter shortcut
+    // Quick Action button listeners
+    btnExplain.addEventListener('click', () => handleExecuteAction('explain'));
+    if (btnTranslate) {
+      btnTranslate.addEventListener('click', () => handleExecuteAction('translate'));
+    }
+    if (btnDraftReply) {
+      btnDraftReply.addEventListener('click', () => handleExecuteAction('draft_reply'));
+    }
+
+    // Ctrl+Enter shortcut runs current active action
     explainInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        handleExplain();
+        handleExecuteAction(activeQuickAction || 'explain');
       }
     });
 
-    // Copy result
+    // Copy result to clipboard with fallback (Edge case CC.21)
     btnCopy.addEventListener('click', async () => {
+      const textToCopy = resultText.textContent || '';
+      if (!textToCopy) return;
+
       try {
-        await navigator.clipboard.writeText(resultText.textContent);
+        await navigator.clipboard.writeText(textToCopy);
         btnCopy.textContent = '✅ Copied';
         btnCopy.classList.add('copied');
         setTimeout(() => {
@@ -281,13 +310,28 @@
           btnCopy.classList.remove('copied');
         }, 1500);
       } catch (err) {
-        // Fallback for environments where clipboard API may fail
-        console.warn('[Sahayak] Clipboard write failed:', err);
-        const range = document.createRange();
-        range.selectNodeContents(resultText);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        // Fallback for restricted clipboard contexts
+        console.warn('[Sahayak] Clipboard API write failed, using fallback:', err);
+        try {
+          const textarea = document.createElement('textarea');
+          textarea.value = textToCopy;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+
+          btnCopy.textContent = '✅ Copied';
+          btnCopy.classList.add('copied');
+          setTimeout(() => {
+            btnCopy.textContent = '📋 Copy';
+            btnCopy.classList.remove('copied');
+          }, 1500);
+        } catch (fallbackErr) {
+          console.error('[Sahayak] Fallback copy also failed:', fallbackErr);
+        }
       }
     });
 
@@ -295,23 +339,25 @@
     btnClear.addEventListener('click', () => {
       resultArea.style.display = 'none';
       errorArea.style.display = 'none';
+      if (truncationNotice) truncationNotice.style.display = 'none';
       resultText.textContent = '';
       modelBadge.textContent = '';
     });
 
     // Retry
-    btnRetry.addEventListener('click', () => handleExplain());
+    btnRetry.addEventListener('click', () => handleExecuteAction(activeQuickAction || 'explain'));
 
     /**
-     * Core handler: validate → show loading → call AI → show result/error.
-     * Uses explainRequestId to discard stale responses from rapid clicks.
+     * Execute quick action on text: validate -> loading -> AI call -> display.
      */
-    async function handleExplain() {
-      const text = explainInput.value.trim();
+    async function handleExecuteAction(action, textOverride = null, isTruncated = false) {
+      activeQuickAction = action || 'explain';
 
-      // Validate: empty input
+      const text = (textOverride !== null ? textOverride : explainInput.value).trim();
+
+      // Edge case 2.2.3: Validate empty input
       if (!text) {
-        showExplainError('Please paste or type some text to explain.');
+        showExplainError('Please paste, type, or select some text first.');
         return;
       }
 
@@ -322,17 +368,24 @@
       // Stamp this request so we can discard stale responses
       const thisRequestId = ++explainRequestId;
 
-      // UI: show loading, hide previous result/error
-      btnExplain.disabled = true;
-      btnExplain.textContent = '⏳ Thinking…';
+      // Update button labels & loading state
+      setActionsDisabled(true);
       loadingArea.style.display = 'flex';
       resultArea.style.display = 'none';
       errorArea.style.display = 'none';
 
+      // Set result card title
+      updateResultTitle(action);
+
+      // Edge case 2.2.2: Truncation warning banner
+      if (truncationNotice) {
+        truncationNotice.style.display = isTruncated ? 'flex' : 'none';
+      }
+
       try {
         const response = await chrome.runtime.sendMessage({
-          type: 'EXPLAIN_TEXT',
-          payload: { text, language: currentLanguage }
+          type: 'EXECUTE_CONTEXT_ACTION',
+          payload: { action, text, language: currentLanguage }
         });
 
         // Discard if a newer request has been fired
@@ -341,6 +394,9 @@
         if (response.success) {
           resultText.textContent = response.data.text;
           modelBadge.textContent = `⚡ ${response.data.model}`;
+          if (response.data.isTruncated && truncationNotice) {
+            truncationNotice.style.display = 'flex';
+          }
           resultArea.style.display = 'block';
         } else {
           const errMsg = response.error?.message || 'Something went wrong. Please try again.';
@@ -352,16 +408,81 @@
       } finally {
         if (thisRequestId === explainRequestId) {
           loadingArea.style.display = 'none';
-          btnExplain.disabled = false;
-          btnExplain.textContent = '🧠 Explain This';
+          setActionsDisabled(false);
           isExplainPending = false;
         }
       }
     }
 
+    function updateResultTitle(action) {
+      if (!resultTitle) return;
+      const normalized = (action || '').toLowerCase().replace(/-/g, '_');
+      switch (normalized) {
+        case 'translate':
+          resultTitle.textContent = currentLanguage === 'hi-en'
+            ? '🌐 Translation (Hinglish)'
+            : '🌐 Translation (Hindi)';
+          break;
+        case 'draft_reply':
+        case 'draftreply':
+          resultTitle.textContent = '✉️ Draft Reply';
+          break;
+        case 'explain':
+        default:
+          resultTitle.textContent = '📝 Explanation';
+          break;
+      }
+    }
+
+    function setActionsDisabled(disabled) {
+      if (btnExplain) btnExplain.disabled = disabled;
+      if (btnTranslate) btnTranslate.disabled = disabled;
+      if (btnDraftReply) btnDraftReply.disabled = disabled;
+    }
+
     function showExplainError(msg) {
       errorText.textContent = msg;
       errorArea.style.display = 'flex';
+    }
+
+    // Attach external trigger
+    window._sahayakExecuteContextAction = (payload) => {
+      switchTab('summary');
+      if (payload.text) {
+        explainInput.value = payload.text;
+        updateCharCount();
+      }
+      handleExecuteAction(payload.action || 'explain', payload.text, !!payload.isTruncated);
+    };
+  }
+
+  /**
+   * Handle incoming or pending context action (Slice 2.2).
+   */
+  function handleContextAction(payload) {
+    if (!payload || !payload.text) return;
+    if (typeof window._sahayakExecuteContextAction === 'function') {
+      window._sahayakExecuteContextAction(payload);
+    }
+  }
+
+  /**
+   * Check session storage for pending context action on startup (Edge cases 2.2.1 & 2.2.4).
+   */
+  async function checkPendingContextAction() {
+    if (!chrome.storage || !chrome.storage.session) return;
+    try {
+      const res = await chrome.storage.session.get('sahayak_pending_context_action');
+      if (res && res.sahayak_pending_context_action) {
+        const pending = res.sahayak_pending_context_action;
+        await chrome.storage.session.remove('sahayak_pending_context_action');
+        // If fresh (< 2 minutes old), process
+        if (Date.now() - (pending.timestamp || 0) < 120000) {
+          handleContextAction(pending);
+        }
+      }
+    } catch (e) {
+      console.warn('[Sahayak] Could not process pending context action:', e);
     }
   }
 
@@ -373,6 +494,7 @@
     switchTab,
     openSettings,
     checkApiKeyBanner,
+    handleContextAction,
   };
 
   // ── Boot ────────────────────────────────────────────────────────────

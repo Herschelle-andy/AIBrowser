@@ -59,25 +59,35 @@
     <main class="tab-content">
 
       <section id="tab-summary" class="tab-panel active" role="tabpanel">
-        <!-- Explain Text UI -->
+        <!-- Quick Actions & Explain Text UI (Slice 1.2 & Slice 2.2) -->
         <div class="explain-section">
-          <h3 class="section-title">✨ Explain Text</h3>
-          <p class="section-desc">Select text on any page and paste it here, or it will auto-fill when you use the
-            right-click menu (coming soon).</p>
+          <h3 class="section-title">⚡ Quick Actions</h3>
+          <p class="section-desc">Select text on any page and right-click (Explain, Translate, Draft Reply), or choose an action below.</p>
           <textarea id="explain-input" class="form-input explain-textarea"
-            placeholder="Paste or type text here to explain..." rows="5" maxlength="5000"></textarea>
+            placeholder="Paste or type text here..." rows="5" maxlength="5000"></textarea>
           <div class="explain-actions">
             <span id="explain-char-count" class="char-count">0 / 5000</span>
-            <button id="btn-explain" class="btn btn-primary">
-              🧠 Explain This
-            </button>
+            <div class="quick-action-buttons">
+              <button id="btn-explain" class="btn btn-primary btn-sm" title="Explain selected or pasted text">
+                🧠 Explain
+              </button>
+              <button id="btn-translate" class="btn btn-secondary btn-sm" title="Translate into Hindi">
+                🌐 Translate
+              </button>
+              <button id="btn-draft-reply" class="btn btn-secondary btn-sm" title="Draft a polite reply">
+                ✉️ Draft Reply
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Result Area -->
+        <!-- Result Area (Quick Action Result Card) -->
         <div id="explain-result" class="result-area" style="display: none;">
+          <div id="explain-truncation-notice" class="truncation-notice" style="display: none;">
+            ⚠️ Only the first 2,000 characters of your selection were processed.
+          </div>
           <div class="result-header">
-            <h3 class="section-title">📝 Explanation</h3>
+            <h3 id="explain-result-title" class="section-title">📝 Result</h3>
             <div class="result-actions">
               <button id="btn-copy-result" class="btn btn-secondary btn-sm" title="Copy to clipboard">
                 📋 Copy

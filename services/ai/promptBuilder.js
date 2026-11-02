@@ -317,12 +317,103 @@
     };
   }
 
+  /**
+   * Build prompt for explaining selected text (Slice 2.2).
+   *
+   * @param {string} text
+   * @param {string} [language='en']
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildExplainPrompt(text, language = 'en') {
+    const langRule = getLanguageInstruction(language);
+    const systemPrompt = `You are Sahayak, an intelligent, helpful browser assistant. ${langRule}`;
+    const userPrompt = `Explain the following in simple, plain language:\n\n${text}`;
+
+    return { systemPrompt, userPrompt };
+  }
+
+  /**
+   * Build prompt for translating selected text (Slice 2.2).
+   *
+   * @param {string} text
+   * @param {string} [language='en']
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildTranslatePrompt(text, language = 'en') {
+    let systemPrompt;
+    let userPrompt;
+
+    if (language === 'hi-en') {
+      systemPrompt =
+        'You are Sahayak, an expert bilingual translator. ' +
+        'Translate the text into natural Roman-script Hinglish (Hindi-English mix written strictly in Latin script). ' +
+        'Keep technical, brand, and domain-specific terms in English. Do NOT use Devanagari script.';
+      userPrompt = `Translate the following into Roman-script Hinglish:\n\n${text}`;
+    } else {
+      systemPrompt =
+        'You are Sahayak, an expert bilingual translator. ' +
+        'Translate the text accurately, clearly, and naturally into Hindi. Preserve original meaning and tone.';
+      userPrompt = `Translate the following into Hindi:\n\n${text}`;
+    }
+
+    return { systemPrompt, userPrompt };
+  }
+
+  /**
+   * Build prompt for drafting a reply to selected message (Slice 2.2 & Edge case 2.2.5).
+   *
+   * @param {string} text
+   * @param {string} [language='en']
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildDraftReplyPrompt(text, language = 'en') {
+    const langRule = getLanguageInstruction(language);
+    const systemPrompt = `You are Sahayak, an expert communication assistant. ${langRule}`;
+
+    const userPrompt = [
+      'Draft a polite, professional reply to the following message:',
+      '',
+      text,
+      '',
+      'Note: If the text does not appear to be a message, provide a thoughtful, helpful response to the topic instead.'
+    ].join('\n');
+
+    return { systemPrompt, userPrompt };
+  }
+
+  /**
+   * Generic router for context menu actions (Slice 2.2).
+   *
+   * @param {string} action - 'explain' | 'translate' | 'draft_reply' | 'draft-reply'
+   * @param {string} text
+   * @param {string} [language='en']
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildContextActionPrompt(action, text, language = 'en') {
+    const normalized = (action || '').toLowerCase().replace(/-/g, '_');
+    switch (normalized) {
+      case 'explain':
+        return buildExplainPrompt(text, language);
+      case 'translate':
+        return buildTranslatePrompt(text, language);
+      case 'draft_reply':
+      case 'draftreply':
+        return buildDraftReplyPrompt(text, language);
+      default:
+        return buildExplainPrompt(text, language);
+    }
+  }
+
   // Export
   globalThis.PromptBuilder = {
     getLanguageInstruction,
     buildSummaryPrompt,
     buildYouTubePrompt,
     buildGroundedChatPrompt,
+    buildExplainPrompt,
+    buildTranslatePrompt,
+    buildDraftReplyPrompt,
+    buildContextActionPrompt,
     chunkAndSelectContext,
     formatConversationHistory
   };

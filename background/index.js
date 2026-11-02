@@ -14,7 +14,8 @@
 importScripts(
   '/services/ai/geminiProvider.js',
   '/services/ai/modelGateway.js',
-  '/services/ai/promptBuilder.js'
+  '/services/ai/promptBuilder.js',
+  '/background/contextMenus.js'
 );
 
 // ── Side Panel Behaviour ──────────────────────────────────────────────
@@ -178,6 +179,52 @@ async function handleMessage(message, sender) {
       return {
         success: true,
         data: { tabId: tab.id, url: tab.url, title: tab.title, isRestricted: restricted, isYouTube }
+      };
+    }
+
+    // ── AI: Context Menu Quick Actions (Slice 2.2) ───────────
+    case 'EXECUTE_CONTEXT_ACTION': {
+      const { action = 'explain', text, language } = message.payload || {};
+
+      if (!text || text.trim().length === 0) {
+        return {
+          success: false,
+          error: { code: 'EMPTY_INPUT', message: 'No text provided. Please select or paste some text.' }
+        };
+      }
+
+      // Truncate very long input to 2,000 characters (edge case 2.2.2)
+      let isTruncated = false;
+      let trimmedText = text.trim();
+      if (trimmedText.length > 2000) {
+        trimmedText = trimmedText.substring(0, 2000);
+        isTruncated = true;
+      }
+
+      let lang = language;
+      if (!lang) {
+        const prefs = await chrome.storage.local.get('sahayak_preferences');
+        lang = prefs.sahayak_preferences?.language || 'en';
+      }
+
+      const { systemPrompt, userPrompt } = PromptBuilder.buildContextActionPrompt(action, trimmedText, lang);
+
+      const result = await ModelGateway.queryAI({
+        prompt: userPrompt,
+        systemPrompt,
+        task: 'text',
+        temperature: 0.3,
+        maxTokens: 1024,
+      });
+
+      return {
+        success: true,
+        data: {
+          text: result.text,
+          model: result.model,
+          action,
+          isTruncated
+        }
       };
     }
 
