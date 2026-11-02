@@ -49,14 +49,25 @@ async function callGemini(apiKey, model, prompt, options = {}) {
     temperature = 0.4,
     maxOutputTokens = 2048,
     timeoutMs = REQUEST_TIMEOUT_MS,
+    videoUrl = null,
   } = options;
+
+  // Build request parts
+  const parts = [{ text: prompt }];
+  if (videoUrl) {
+    parts.push({
+      fileData: {
+        fileUri: videoUrl
+      }
+    });
+  }
 
   // Build request payload
   const payload = {
     contents: [
       {
         role: 'user',
-        parts: [{ text: prompt }]
+        parts
       }
     ],
     generationConfig: {
@@ -117,6 +128,13 @@ async function callGemini(apiKey, model, prompt, options = {}) {
 
   // Handle HTTP error statuses
   if (!response.ok) {
+    // If videoUrl in fileData failed with 400, retry once with video URL in prompt text
+    if (response.status === 400 && videoUrl && parts.length > 1) {
+      console.warn('[GeminiProvider] fileData videoUri returned 400, retrying with video URL in prompt text...');
+      const fallbackOptions = { ...options, videoUrl: null };
+      const fallbackPrompt = `Video to analyze: ${videoUrl}\n\n${prompt}`;
+      return await callGemini(apiKey, model, fallbackPrompt, fallbackOptions);
+    }
     await handleHttpError(response);
   }
 

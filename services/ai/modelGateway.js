@@ -37,9 +37,10 @@ let _discoveredWorkingModel = null;
  * @param {string} [params.task]          — 'text' | 'reasoning' | 'vision' (selects model)
  * @param {number} [params.temperature]   — 0.0–2.0
  * @param {number} [params.maxTokens]     — Max output tokens
+ * @param {string} [params.videoUrl]      — Optional video URL for multimodal analysis
  * @returns {Promise<{text: string, model: string, provider: string}>}
  */
-async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTokens }) {
+async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTokens, videoUrl = null }) {
   // 1. Read API keys
   const keys = await getApiKeys();
 
@@ -65,6 +66,7 @@ async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTo
         systemPrompt,
         temperature,
         maxOutputTokens: maxTokens,
+        videoUrl,
       });
 
       // Cache this working model
@@ -115,6 +117,7 @@ async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTo
             systemPrompt,
             temperature,
             maxOutputTokens: maxTokens,
+            videoUrl,
           });
 
           _discoveredWorkingModel = modelId;

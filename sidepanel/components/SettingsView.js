@@ -58,11 +58,26 @@ const SettingsView = (() => {
           <div id="groq-key-hint" class="key-format-hint"></div>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">Response Language</label>
+          <span class="form-hint">Choose default output language for summaries and explanations</span>
+          <div class="settings-lang-options">
+            <label class="lang-radio-label">
+              <input type="radio" name="settings-language" value="en" id="settings-lang-en" checked />
+              <span>English (Default)</span>
+            </label>
+            <label class="lang-radio-label">
+              <input type="radio" name="settings-language" value="hi-en" id="settings-lang-hi" />
+              <span>Hinglish (Hindi in Roman script)</span>
+            </label>
+          </div>
+        </div>
+
         <div id="settings-save-status" class="status-text" aria-live="polite"></div>
 
         <div style="display: flex; gap: 8px;">
           <button type="submit" class="btn btn-primary btn-full">
-            💾 Save Keys
+            💾 Save Settings
           </button>
           <button type="button" id="btn-toggle-visibility" class="btn btn-secondary" title="Show/hide keys">
             👁️
@@ -78,6 +93,24 @@ const SettingsView = (() => {
     container.querySelector('#btn-toggle-visibility').addEventListener('click', onToggleVisibility);
     container.querySelector('#gemini-key').addEventListener('input', onGeminiKeyInput);
     container.querySelector('#groq-key').addEventListener('input', onGroqKeyInput);
+
+    // Sync language selection when radio changes
+    container.querySelectorAll('input[name="settings-language"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        if (radio.checked && window.SahayakApp && window.SahayakApp.setLanguage) {
+          window.SahayakApp.setLanguage(radio.value);
+        }
+      });
+    });
+
+    // Update settings radio when language changes in header
+    window.addEventListener('sahayak:language-changed', (e) => {
+      const lang = e.detail?.language;
+      const langEnRadio = _container?.querySelector('#settings-lang-en');
+      const langHiRadio = _container?.querySelector('#settings-lang-hi');
+      if (langEnRadio) langEnRadio.checked = (lang === 'en');
+      if (langHiRadio) langHiRadio.checked = (lang === 'hi-en');
+    });
 
     // Load existing keys
     loadKeys();
@@ -98,8 +131,23 @@ const SettingsView = (() => {
         validateKeyFormat('gemini', geminiInput.value);
         validateKeyFormat('groq', groqInput.value);
       }
+
+      // Load language preference
+      let currentLang = 'en';
+      if (window.SahayakApp && window.SahayakApp.getCurrentLanguage) {
+        currentLang = window.SahayakApp.getCurrentLanguage();
+      } else {
+        const prefRes = await chrome.runtime.sendMessage({ type: 'GET_PREFERENCES' });
+        if (prefRes.success && prefRes.data?.language) {
+          currentLang = prefRes.data.language;
+        }
+      }
+      const langEnRadio = _container.querySelector('#settings-lang-en');
+      const langHiRadio = _container.querySelector('#settings-lang-hi');
+      if (langEnRadio) langEnRadio.checked = (currentLang === 'en');
+      if (langHiRadio) langHiRadio.checked = (currentLang === 'hi-en');
     } catch (err) {
-      console.error('[SettingsView] Failed to load keys:', err);
+      console.error('[SettingsView] Failed to load settings:', err);
     }
   }
 
@@ -110,15 +158,21 @@ const SettingsView = (() => {
     e.preventDefault();
     const geminiKey = _container.querySelector('#gemini-key').value;
     const groqKey = _container.querySelector('#groq-key').value;
+    const selectedLang = _container.querySelector('input[name="settings-language"]:checked')?.value || 'en';
 
     try {
+      // Save language preference
+      if (window.SahayakApp && window.SahayakApp.setLanguage) {
+        await window.SahayakApp.setLanguage(selectedLang);
+      }
+
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_API_KEYS',
         payload: { geminiKey, groqKey }
       });
 
       if (response.success) {
-        showStatus('✅ Keys saved successfully.', 'success');
+        showStatus('✅ Settings saved successfully.', 'success');
         // Notify the main app to update the API key banner
         window.dispatchEvent(new CustomEvent('sahayak:keys-updated'));
       } else {

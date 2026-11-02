@@ -134,9 +134,10 @@ async function handleMessage(message, sender) {
         return { success: false, error: { code: 'NO_TAB', message: 'No active tab found.' } };
       }
       const restricted = isRestrictedUrl(tab.url);
+      const isYouTube = isYouTubeUrl(tab.url);
       return {
         success: true,
-        data: { tabId: tab.id, url: tab.url, title: tab.title, isRestricted: restricted }
+        data: { tabId: tab.id, url: tab.url, title: tab.title, isRestricted: restricted, isYouTube }
       };
     }
 
@@ -154,7 +155,13 @@ async function handleMessage(message, sender) {
       // Truncate very long input (edge case 2.2.2 — preemptive)
       const trimmedText = text.length > 3000 ? text.substring(0, 3000) + '\n\n[...text truncated]' : text;
 
-      const langInstruction = PromptBuilder.getLanguageInstruction(language);
+      let lang = language;
+      if (!lang) {
+        const prefs = await chrome.storage.local.get('sahayak_preferences');
+        lang = prefs.sahayak_preferences?.language || 'en';
+      }
+
+      const langInstruction = PromptBuilder.getLanguageInstruction(lang);
 
       const result = await ModelGateway.queryAI({
         prompt: `Explain the following in simple, plain language:\n\n${trimmedText}`,
@@ -174,6 +181,15 @@ async function handleMessage(message, sender) {
 
     case 'SUMMARIZE_PAGE': {
       return await handleSummarizePage(message.payload || {});
+    }
+
+    // ── YouTube Summarisation (Slice 1.4) ────────────────────
+    case 'SUMMARIZE_YOUTUBE': {
+      return await handleSummarizeYouTube(message.payload || {});
+    }
+
+    case 'SEEK_VIDEO': {
+      return await handleSeekVideo(message.payload || {});
     }
 
     // ── Health Check ─────────────────────────────────────────
@@ -209,6 +225,7 @@ async function ensureContentScriptInjected(tabId) {
       files: [
         'content/lib/Readability.js',
         'content/reader.js',
+        'content/youtube.js',
         'content/index.js'
       ]
     });
@@ -381,6 +398,246 @@ async function handleSummarizePage(payload = {}) {
       }
     }
   };
+}
+
+/**
+ * Handle YouTube summarisation: captions -> prompt -> AI -> chapter notes.
+ * Falls back to direct video analysis if no captions are available.
+ */
+async function handleSummarizeYouTube(payload = {}) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) {
+    return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
+  }
+
+  const initialUrl = tab.url;
+  const tabId = tab.id;
+
+  if (!isYouTubeUrl(initialUrl)) {
+    return {
+      success: false,
+      error: { code: 'NOT_YOUTUBE', message: 'The current active tab is not a supported YouTube video.' }
+    };
+  }
+
+  // Edge case 1.4.3: Livestreams
+  if (initialUrl.includes('/live/') || initialUrl.includes('feature=live')) {
+    return {
+      success: false,
+      error: { code: 'LIVESTREAM_NOT_SUPPORTED', message: 'Live streams cannot be summarised.' }
+    };
+  }
+
+  // 1. Ensure content script is active in the YouTube tab
+  try {
+    await ensureContentScriptInjected(tabId);
+  } catch (err) {
+    return {
+      success: false,
+      error: {
+        code: 'INJECTION_FAILED',
+        message: 'Could not connect to the YouTube page. Please refresh the tab and try again.'
+      }
+    };
+  }
+
+  // 2. Extract captions and metadata from content script
+  let captionsRes;
+  try {
+    captionsRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_YOUTUBE_CAPTIONS' });
+  } catch (err) {
+    return {
+      success: false,
+      error: {
+        code: 'COMMUNICATION_ERROR',
+        message: 'Could not communicate with the YouTube page. Please refresh and try again.'
+      }
+    };
+  }
+
+  if (captionsRes && !captionsRes.success) {
+    if (captionsRes.isLive) {
+      return {
+        success: false,
+        error: { code: 'LIVESTREAM_NOT_SUPPORTED', message: 'Live streams cannot be summarised.' }
+      };
+    }
+    if (captionsRes.isRestricted) {
+      return {
+        success: false,
+        error: {
+          code: 'RESTRICTED_VIDEO',
+          message: captionsRes.error || 'This video is private, restricted, or requires login. Sahayak can only summarise public YouTube videos.'
+        }
+      };
+    }
+  }
+
+  const videoData = captionsRes?.data || {};
+  const hasCaptions = Boolean(captionsRes?.success && videoData.hasCaptions && videoData.captionsText);
+
+  // 3. Language preference
+  let language = payload.language;
+  if (!language) {
+    const prefs = await chrome.storage.local.get('sahayak_preferences');
+    language = prefs.sahayak_preferences?.language || 'en';
+  }
+
+  let aiResult;
+
+  if (hasCaptions) {
+    // Primary path: Summarise extracted timestamped captions
+    const { systemPrompt, userPrompt } = PromptBuilder.buildYouTubePrompt({
+      videoId: videoData.videoId || extractVideoId(initialUrl),
+      title: videoData.title || tab.title,
+      author: videoData.author,
+      url: initialUrl,
+      captionsText: videoData.captionsText,
+      hasCaptions: true,
+      isAutoGenerated: videoData.isAutoGenerated,
+      isTruncated: videoData.isTruncated
+    }, language);
+
+    aiResult = await ModelGateway.queryAI({
+      prompt: userPrompt,
+      systemPrompt,
+      task: 'text',
+      temperature: 0.3,
+      maxTokens: 2048
+    });
+  } else {
+    // Fallback path (Edge case 1.4.1): No captions available — pass URL directly to Gemini
+    const videoId = extractVideoId(initialUrl);
+    const { systemPrompt, userPrompt } = PromptBuilder.buildYouTubePrompt({
+      videoId,
+      title: tab.title,
+      url: initialUrl,
+      hasCaptions: false
+    }, language);
+
+    try {
+      aiResult = await ModelGateway.queryAI({
+        prompt: userPrompt,
+        systemPrompt,
+        task: 'vision',
+        temperature: 0.3,
+        maxTokens: 2048,
+        videoUrl: initialUrl
+      });
+    } catch (fallbackErr) {
+      return {
+        success: false,
+        error: {
+          code: 'NO_CAPTIONS_OR_AI_FAILED',
+          message: "This video doesn't have captions and couldn't be processed."
+        }
+      };
+    }
+  }
+
+  // Edge case 1.3.7: check if user navigated away or closed the tab mid-summarisation
+  try {
+    const tabCheck = await chrome.tabs.get(tabId);
+    if (!tabCheck || tabCheck.url !== initialUrl) {
+      return {
+        success: false,
+        error: {
+          code: 'TAB_NAVIGATED',
+          message: 'You navigated away from the YouTube video while the summary was being prepared.'
+        }
+      };
+    }
+  } catch (tabErr) {
+    return {
+      success: false,
+      error: {
+        code: 'TAB_CLOSED',
+        message: 'The YouTube tab was closed while the summary was being prepared.'
+      }
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      summary: aiResult.text,
+      model: aiResult.model,
+      provider: aiResult.provider,
+      video: {
+        videoId: videoData.videoId || extractVideoId(initialUrl),
+        title: videoData.title || tab.title,
+        author: videoData.author,
+        url: initialUrl,
+        hasCaptions,
+        isAutoGenerated: videoData.isAutoGenerated,
+        isTruncated: videoData.isTruncated,
+        usedDirectUrl: !hasCaptions
+      }
+    }
+  };
+}
+
+/**
+ * Handle seeking YouTube video player to specific seconds timestamp.
+ */
+async function handleSeekVideo(payload = {}) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) {
+    return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
+  }
+
+  try {
+    return await chrome.tabs.sendMessage(tab.id, {
+      type: 'SEEK_VIDEO',
+      payload: { seconds: payload.seconds }
+    });
+  } catch (err) {
+    return {
+      success: false,
+      error: { code: 'SEEK_FAILED', message: 'Could not find the video player on this page.' }
+    };
+  }
+}
+
+/**
+ * Detect whether a URL belongs to YouTube.
+ */
+function isYouTubeUrl(url) {
+  if (!url) return false;
+  return /(?:youtube\.com\/(?:watch|shorts|embed|live)|youtu\.be\/)/i.test(url);
+}
+
+/**
+ * Extract YouTube 11-character video ID from URL.
+ */
+function extractVideoId(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (hostname === 'youtu.be' || hostname.endsWith('.youtu.be')) {
+      const id = parsed.pathname.slice(1).split('/')[0];
+      return id && id.length > 0 ? id : null;
+    }
+
+    if (hostname.includes('youtube.com')) {
+      const v = parsed.searchParams.get('v');
+      if (v) return v;
+
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+      if (pathParts.length >= 2) {
+        const prefix = pathParts[0];
+        if (['shorts', 'embed', 'live', 'v'].includes(prefix)) {
+          return pathParts[1];
+        }
+      }
+    }
+  } catch (e) {
+    const match = url.match(/(?:youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1];
+  }
+  return null;
 }
 
 /**

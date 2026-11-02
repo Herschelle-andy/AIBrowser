@@ -54,7 +54,7 @@
     }
     if (chrome.tabs && chrome.tabs.onUpdated) {
       chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-        if (changeInfo.status === 'complete' && window.SummaryView) {
+        if ((changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) && window.SummaryView) {
           SummaryView.refreshActiveTabInfo();
         }
       });
@@ -153,41 +153,71 @@
     }
   }
 
-  // ── Language Toggle ─────────────────────────────────────────────────
+  // ── Language Toggle (Slice 1.5) ─────────────────────────────────────
   function setupLanguageToggle() {
     langBtnEn.addEventListener('click', () => setLanguage('en'));
     langBtnHi.addEventListener('click', () => setLanguage('hi-en'));
   }
 
   async function setLanguage(lang) {
+    if (lang !== 'en' && lang !== 'hi-en') return;
     currentLanguage = lang;
 
-    // Update button UI
+    // Update button UI & accessibility attributes
     langBtnEn.classList.toggle('active', lang === 'en');
     langBtnHi.classList.toggle('active', lang === 'hi-en');
+    langBtnEn.setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
+    langBtnHi.setAttribute('aria-pressed', lang === 'hi-en' ? 'true' : 'false');
 
-    // Persist to storage
+    // Persist to storage directly and via background message
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_PREFERENCES' });
-      const prefs = (response.success && response.data) ? response.data : {};
-      prefs.language = lang;
-      await chrome.runtime.sendMessage({ type: 'SAVE_PREFERENCES', payload: prefs });
+      if (chrome.storage && chrome.storage.local) {
+        const stored = await chrome.storage.local.get('sahayak_preferences');
+        const prefs = stored.sahayak_preferences || { schemaVersion: 1 };
+        prefs.language = lang;
+        await chrome.storage.local.set({ sahayak_preferences: prefs });
+      }
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_PREFERENCES',
+        payload: { language: lang, schemaVersion: 1 }
+      });
     } catch (err) {
       console.warn('[Sahayak] Could not save language preference:', err);
     }
+
+    // Broadcast change event to all views and components
+    window.dispatchEvent(new CustomEvent('sahayak:language-changed', {
+      detail: { language: lang }
+    }));
   }
 
   async function loadLanguagePreference() {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_PREFERENCES' });
-      if (response.success && response.data && response.data.language) {
-        const lang = response.data.language;
-        currentLanguage = lang;
-        langBtnEn.classList.toggle('active', lang === 'en');
-        langBtnHi.classList.toggle('active', lang === 'hi-en');
+      let lang = 'en';
+      if (chrome.storage && chrome.storage.local) {
+        const stored = await chrome.storage.local.get('sahayak_preferences');
+        if (stored.sahayak_preferences?.language) {
+          lang = stored.sahayak_preferences.language;
+        }
+      } else {
+        const response = await chrome.runtime.sendMessage({ type: 'GET_PREFERENCES' });
+        if (response.success && response.data?.language) {
+          lang = response.data.language;
+        }
       }
+
+      currentLanguage = (lang === 'hi-en') ? 'hi-en' : 'en';
+      langBtnEn.classList.toggle('active', currentLanguage === 'en');
+      langBtnHi.classList.toggle('active', currentLanguage === 'hi-en');
+      langBtnEn.setAttribute('aria-pressed', currentLanguage === 'en' ? 'true' : 'false');
+      langBtnHi.setAttribute('aria-pressed', currentLanguage === 'hi-en' ? 'true' : 'false');
     } catch (err) {
       // Default to English (edge case 1.5.3)
+      currentLanguage = 'en';
+      langBtnEn.classList.add('active');
+      langBtnHi.classList.remove('active');
+      langBtnEn.setAttribute('aria-pressed', 'true');
+      langBtnHi.setAttribute('aria-pressed', 'false');
       console.warn('[Sahayak] Could not load language preference, defaulting to EN.');
     }
   }
@@ -323,10 +353,11 @@
     }
   }
 
-  // ── Public API (for other components to read current state) ────────
+  // ── Public API (for other components to read/write state) ─────────
   window.SahayakApp = {
     getCurrentTab: () => currentTab,
     getCurrentLanguage: () => currentLanguage,
+    setLanguage,
     switchTab,
     openSettings,
     checkApiKeyBanner,

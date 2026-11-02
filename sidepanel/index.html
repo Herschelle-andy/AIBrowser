@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sahayak</title>
   <link rel="stylesheet" href="styles/panel.css">
 </head>
+
 <body>
   <div id="app">
 
@@ -13,9 +15,11 @@
     <header class="panel-header">
       <div class="header-left">
         <h1 class="logo">🤖 Sahayak</h1>
-        <div class="lang-toggle" title="Switch output language">
-          <button id="btn-lang-en" class="lang-btn active" data-lang="en">EN</button>
-          <button id="btn-lang-hi" class="lang-btn" data-lang="hi-en">हिंग्लिश</button>
+        <div class="lang-toggle" role="group" aria-label="Output Language" title="Switch output language">
+          <button id="btn-lang-en" class="lang-btn active" data-lang="en" aria-pressed="true"
+            title="English output">EN</button>
+          <button id="btn-lang-hi" class="lang-btn" data-lang="hi-en" aria-pressed="false"
+            title="Hinglish output (Hindi written in Roman script)">हिंग्लिश</button>
         </div>
       </div>
       <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Open settings">
@@ -58,14 +62,10 @@
         <!-- Explain Text UI -->
         <div class="explain-section">
           <h3 class="section-title">✨ Explain Text</h3>
-          <p class="section-desc">Select text on any page and paste it here, or it will auto-fill when you use the right-click menu (coming soon).</p>
-          <textarea
-            id="explain-input"
-            class="form-input explain-textarea"
-            placeholder="Paste or type text here to explain..."
-            rows="5"
-            maxlength="5000"
-          ></textarea>
+          <p class="section-desc">Select text on any page and paste it here, or it will auto-fill when you use the
+            right-click menu (coming soon).</p>
+          <textarea id="explain-input" class="form-input explain-textarea"
+            placeholder="Paste or type text here to explain..." rows="5" maxlength="5000"></textarea>
           <div class="explain-actions">
             <span id="explain-char-count" class="char-count">0 / 5000</span>
             <button id="btn-explain" class="btn btn-primary">
@@ -172,5 +172,5 @@
   <script src="components/SummaryView.js"></script>
   <script src="app.js"></script>
 </body>
-</html>
 
+</html>
