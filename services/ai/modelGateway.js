@@ -38,9 +38,10 @@ let _discoveredWorkingModel = null;
  * @param {number} [params.temperature]   — 0.0–2.0
  * @param {number} [params.maxTokens]     — Max output tokens
  * @param {string} [params.videoUrl]      — Optional video URL for multimodal analysis
+ * @param {Object} [params.inlineData]    — Optional image data { mimeType, data }
  * @returns {Promise<{text: string, model: string, provider: string}>}
  */
-async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTokens, videoUrl = null }) {
+async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTokens, videoUrl = null, inlineData = null }) {
   // 1. Read API keys
   const keys = await getApiKeys();
 
@@ -67,6 +68,7 @@ async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTo
         temperature,
         maxOutputTokens: maxTokens,
         videoUrl,
+        inlineData,
       });
 
       // Cache this working model
@@ -118,6 +120,7 @@ async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTo
             temperature,
             maxOutputTokens: maxTokens,
             videoUrl,
+            inlineData,
           });
 
           _discoveredWorkingModel = modelId;
@@ -157,7 +160,7 @@ async function queryAI({ prompt, systemPrompt, task = 'text', temperature, maxTo
  * @param {function(string): void} params.onChunk
  * @returns {Promise<{text: string, model: string, provider: string}>}
  */
-async function streamAI({ prompt, systemPrompt, task = 'text', temperature = 0.3, maxTokens = 2048, signal = null, onChunk }) {
+async function streamAI({ prompt, systemPrompt, task = 'text', temperature = 0.3, maxTokens = 2048, signal = null, onChunk, inlineData = null }) {
   const keys = await getApiKeys();
 
   if (!keys.geminiKey) {
@@ -182,6 +185,7 @@ async function streamAI({ prompt, systemPrompt, task = 'text', temperature = 0.3
         temperature,
         maxOutputTokens: maxTokens,
         signal,
+        inlineData,
       }, onChunk);
 
       _discoveredWorkingModel = model;

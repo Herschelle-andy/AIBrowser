@@ -15,7 +15,8 @@ importScripts(
   '/services/ai/geminiProvider.js',
   '/services/ai/modelGateway.js',
   '/services/ai/promptBuilder.js',
-  '/background/contextMenus.js'
+  '/background/contextMenus.js',
+  '/background/tabCapture.js'
 );
 
 // ── Side Panel Behaviour ──────────────────────────────────────────────
@@ -282,6 +283,85 @@ async function handleMessage(message, sender) {
     // ── Grounded Page Chat (Slice 2.1) ───────────────────────
     case 'CHAT_QUERY': {
       return await handleChatQuery(message.payload || {});
+    }
+
+    // ── Screenshot & Ask (Slice 2.3) ──────────────────────────
+    case 'CAPTURE_SCREENSHOT': {
+      try {
+        const dataUrl = await TabCapture.captureTab();
+        return { success: true, data: { dataUrl } };
+      } catch (err) {
+        return {
+          success: false,
+          error: { code: 'CAPTURE_FAILED', message: err.message || 'Could not capture screenshot.' }
+        };
+      }
+    }
+
+    case 'SCREENSHOT_ASK': {
+      const { image, question, language } = message.payload || {};
+
+      if (!image) {
+        return {
+          success: false,
+          error: { code: 'EMPTY_IMAGE', message: 'No screenshot provided.' }
+        };
+      }
+
+      if (!question || !question.trim()) {
+        return {
+          success: false,
+          error: { code: 'EMPTY_QUESTION', message: 'Please enter a question about the image.' }
+        };
+      }
+
+      let lang = language;
+      if (!lang) {
+        const prefs = await chrome.storage.local.get('sahayak_preferences');
+        lang = prefs.sahayak_preferences?.language || 'en';
+      }
+
+      const langRule = PromptBuilder.getLanguageInstruction(lang);
+      const systemPrompt = `You are Sahayak, an intelligent visual browser assistant. ${langRule} Analyze the provided screenshot carefully and answer the user's question accurately. Focus on visual details, charts, numbers, text, buttons, diagrams, or errors shown in the image.`;
+
+      try {
+        const result = await ModelGateway.queryAI({
+          prompt: question.trim(),
+          systemPrompt,
+          task: 'vision',
+          temperature: 0.3,
+          maxTokens: 1536,
+          inlineData: {
+            mimeType: 'image/png',
+            data: image
+          }
+        });
+
+        return {
+          success: true,
+          data: {
+            text: result.text,
+            model: result.model
+          }
+        };
+      } catch (err) {
+        if (err.code === 'RATE_LIMIT' || err.status === 429) {
+          return {
+            success: false,
+            error: {
+              code: 'VISION_QUOTA_EXHAUSTED',
+              message: 'Screenshot questions require Gemini Flash, which has reached its limit. Please try again later.'
+            }
+          };
+        }
+        return {
+          success: false,
+          error: {
+            code: err.code || 'VISION_ERROR',
+            message: err.message || 'Could not analyze screenshot.'
+          }
+        };
+      }
     }
 
     // ── Health Check ─────────────────────────────────────────

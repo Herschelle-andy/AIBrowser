@@ -50,10 +50,22 @@ async function callGemini(apiKey, model, prompt, options = {}) {
     maxOutputTokens = 2048,
     timeoutMs = REQUEST_TIMEOUT_MS,
     videoUrl = null,
+    inlineData = null,
   } = options;
 
-  // Build request parts
-  const parts = [{ text: prompt }];
+  // Build request parts (multimodal: image + text / video + text)
+  const parts = [];
+  if (inlineData) {
+    const rawData = typeof inlineData === 'string' ? inlineData : (inlineData.data || '');
+    const cleanData = rawData.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+    const mimeType = inlineData.mimeType || inlineData.mime_type || 'image/png';
+    parts.push({
+      inline_data: {
+        mime_type: mimeType,
+        data: cleanData
+      }
+    });
+  }
   if (videoUrl) {
     parts.push({
       fileData: {
@@ -61,6 +73,7 @@ async function callGemini(apiKey, model, prompt, options = {}) {
       }
     });
   }
+  parts.push({ text: prompt });
 
   // Build request payload
   const payload = {
@@ -290,13 +303,28 @@ async function streamGemini(apiKey, model, prompt, options = {}, onChunk = null)
     temperature = 0.3,
     maxOutputTokens = 2048,
     signal = null,
+    inlineData = null,
   } = options;
+
+  const parts = [];
+  if (inlineData) {
+    const rawData = typeof inlineData === 'string' ? inlineData : (inlineData.data || '');
+    const cleanData = rawData.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+    const mimeType = inlineData.mimeType || inlineData.mime_type || 'image/png';
+    parts.push({
+      inline_data: {
+        mime_type: mimeType,
+        data: cleanData
+      }
+    });
+  }
+  parts.push({ text: prompt });
 
   const payload = {
     contents: [
       {
         role: 'user',
-        parts: [{ text: prompt }]
+        parts
       }
     ],
     generationConfig: {

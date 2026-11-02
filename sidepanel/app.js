@@ -52,6 +52,12 @@
       ChatView.render(chatViewContainer);
     }
 
+    // Render the screenshot & ask view (Slice 2.3)
+    const screenshotViewContainer = document.getElementById('screenshot-view-container');
+    if (screenshotViewContainer && window.ScreenshotView) {
+      ScreenshotView.render(screenshotViewContainer);
+    }
+
     // Refresh active tab info when switching or updating tabs
     if (chrome.tabs && chrome.tabs.onActivated) {
       chrome.tabs.onActivated.addListener(() => {
