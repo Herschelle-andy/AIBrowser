@@ -209,7 +209,11 @@ const ChatView = (() => {
         console.log('[ChatView] Stream port disconnected.');
         _port = null;
         if (_isStreaming) {
-          finalizeStreamingBubble();
+          if (_currentStreamingText && _currentStreamingText.trim()) {
+            completeStreaming(_currentStreamingText, 'Gemini');
+          } else {
+            handleStreamingError('Connection to assistant was interrupted. Please try asking again.');
+          }
         }
       });
     } catch (err) {
@@ -409,6 +413,11 @@ const ChatView = (() => {
   }
 
   function finalizeStreamingBubble() {
+    if (_activeStreamingBubble) {
+      _activeStreamingBubble.classList.remove('streaming');
+      const cursor = _activeStreamingBubble.querySelector('.typing-cursor');
+      if (cursor) cursor.remove();
+    }
     _isStreaming = false;
     _activeStreamingBubble = null;
     _currentStreamingText = '';

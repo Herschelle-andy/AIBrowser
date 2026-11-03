@@ -262,6 +262,24 @@
     }
 
     switch (response.status) {
+      case 400: {
+        const isDecommissioned = /decommissioned|deprecated|no longer supported|does not exist|not found/i.test(errorBody);
+        if (isDecommissioned) {
+          throw new GeminiProvider.AIProviderError(
+            `Groq model decommissioned or unsupported: ${errorBody}`,
+            'MODEL_NOT_FOUND',
+            400,
+            false
+          );
+        }
+        throw new GeminiProvider.AIProviderError(
+          `Groq bad request (400): ${errorBody}`,
+          'BAD_REQUEST',
+          400,
+          false
+        );
+      }
+
       case 401:
         throw new GeminiProvider.AIProviderError(
           'Invalid Groq API key. Please check your Groq key in Settings.',
@@ -281,6 +299,14 @@
         throw err;
       }
 
+      case 404:
+        throw new GeminiProvider.AIProviderError(
+          `Groq model not found or not accessible (${errorBody || 'HTTP 404'}).`,
+          'MODEL_NOT_FOUND',
+          404,
+          false
+        );
+
       default:
         throw new GeminiProvider.AIProviderError(
           `Groq API error (${response.status}): ${errorBody}`,
@@ -291,10 +317,38 @@
     }
   }
 
+  /**
+   * List active models available for the given Groq API key.
+   *
+   * @param {string} apiKey
+   * @returns {Promise<Array<{id: string, active: boolean}>>}
+   */
+  async function listModels(apiKey) {
+    if (!apiKey || !apiKey.trim()) return [];
+    try {
+      const response = await fetch(`${GROQ_BASE_URL}/models`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.data || [])
+        .filter((m) => m.active !== false)
+        .map((m) => ({ id: m.id, active: m.active !== false }));
+    } catch (err) {
+      console.warn('[GroqProvider] Could not list models:', err);
+      return [];
+    }
+  }
+
   // Export
   globalThis.GroqProvider = {
     callGroq,
     streamGroq,
+    listModels,
     DEFAULT_MODEL,
   };
 })();

@@ -15,7 +15,7 @@
  */
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const REQUEST_TIMEOUT_MS = 60000; // 60 seconds — generous for deep page summaries
+const REQUEST_TIMEOUT_MS = 30000; // 30 seconds default timeout
 
 /**
  * Custom error class for AI provider failures.

@@ -20,24 +20,141 @@
 
   /** Default models for each task type. */
   const MODELS = {
-    text: 'gemini-3.8-flash',             // Standard GA model
-    reasoning: 'gemini-3.8-flash',        // Structured output & complex reasoning
-    vision: 'gemini-3.8-flash',           // Required for multimodal (image) input
+    text: 'gemini-2.0-flash',             // Standard GA model
+    reasoning: 'gemini-2.0-flash',        // Structured output & complex reasoning
+    vision: 'gemini-2.0-flash',           // Required for multimodal (image) input
   };
 
   /** Candidate models to try in order of preference. */
   const PREFERRED_CANDIDATES = [
-    'gemini-3.8-flash',
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.0-flash-lite',
   ];
 
-  // Memory cache of a known working model for the current worker lifetime
+  /** Candidate Groq models in order of preference. */
+  const GROQ_PREFERRED_CANDIDATES = [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+  ];
+
+  // Memory cache of known working models for the current worker lifetime
   let _discoveredWorkingModel = null;
+  let _discoveredWorkingGroqModel = null;
 
   // Rate-limiting throttle state (Edge case 2.4.4)
   let _lastRequestTime = 0;
   const MIN_REQUEST_INTERVAL_MS = 600;
+
+  /**
+   * Resolve an active Groq chat model for the given API key via live models list.
+   * Free call (0 token cost) that guarantees we never call decommissioned models
+   * or burn user credits on 404s.
+   *
+   * @param {string} apiKey
+   * @returns {Promise<string>}
+   */
+  async function resolveWorkingGroqModel(apiKey) {
+    if (_discoveredWorkingGroqModel) {
+      return _discoveredWorkingGroqModel;
+    }
+
+    try {
+      const available = await GroqProvider.listModels(apiKey);
+      if (available && available.length > 0) {
+        const activeIds = available
+          .map((m) => m.id)
+          .filter((id) => {
+            if (!id || typeof id !== 'string') return false;
+            const lower = id.toLowerCase();
+            return (
+              !lower.includes('whisper') &&
+              !lower.includes('orpheus') &&
+              !lower.includes('guard') &&
+              !lower.includes('embed') &&
+              !lower.includes('mixtral') &&
+              !lower.includes('vision')
+            );
+          });
+
+        console.log('[ModelGateway] Active Groq text models for key:', activeIds);
+
+        // 1. Try matching against preferred candidates
+        for (const preferred of GROQ_PREFERRED_CANDIDATES) {
+          if (activeIds.includes(preferred)) {
+            _discoveredWorkingGroqModel = preferred;
+            console.log(`[ModelGateway] Selected preferred Groq model: ${_discoveredWorkingGroqModel}`);
+            return _discoveredWorkingGroqModel;
+          }
+        }
+
+        // 2. Pick any active llama-3 model
+        const anyLlama = activeIds.find((id) => id.startsWith('llama-3') || id.startsWith('llama3'));
+        if (anyLlama) {
+          _discoveredWorkingGroqModel = anyLlama;
+          console.log(`[ModelGateway] Selected active Llama Groq model: ${_discoveredWorkingGroqModel}`);
+          return _discoveredWorkingGroqModel;
+        }
+
+        // 3. Fallback to first active chat model
+        if (activeIds.length > 0) {
+          _discoveredWorkingGroqModel = activeIds[0];
+          console.log(`[ModelGateway] Selected first available Groq model: ${_discoveredWorkingGroqModel}`);
+          return _discoveredWorkingGroqModel;
+        }
+      }
+    } catch (listErr) {
+      console.warn('[ModelGateway] Live Groq models listing warning:', listErr.message);
+    }
+
+    // Safe fallback
+    _discoveredWorkingGroqModel = GROQ_PREFERRED_CANDIDATES[0];
+    return _discoveredWorkingGroqModel;
+  }
+
+  /**
+   * Execute Groq call with candidate model progression and dynamic discovery.
+   */
+  async function executeGroqCall(apiKey, prompt, options = {}) {
+    const model = await resolveWorkingGroqModel(apiKey);
+    try {
+      return await GroqProvider.callGroq(apiKey, model, prompt, options);
+    } catch (err) {
+      if (err.code === 'MODEL_NOT_FOUND' || err.status === 404 || err.status === 400) {
+        console.warn(`[ModelGateway] Groq model '${model}' rejected (${err.message}). Invalidate and retry with fallback...`);
+        _discoveredWorkingGroqModel = null;
+        // Try fallback between 70b and 8b
+        const fallbackModel = (model === 'llama-3.3-70b-versatile') ? 'llama-3.1-8b-instant' : 'llama-3.3-70b-versatile';
+        const res = await GroqProvider.callGroq(apiKey, fallbackModel, prompt, options);
+        _discoveredWorkingGroqModel = fallbackModel;
+        return res;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Execute Groq stream with candidate model progression and dynamic discovery.
+   */
+  async function executeGroqStream(apiKey, prompt, options = {}, onChunk = null) {
+    const model = await resolveWorkingGroqModel(apiKey);
+    try {
+      return await GroqProvider.streamGroq(apiKey, model, prompt, options, onChunk);
+    } catch (err) {
+      if (err.code === 'MODEL_NOT_FOUND' || err.status === 404 || err.status === 400) {
+        console.warn(`[ModelGateway] Groq stream model '${model}' rejected (${err.message}). Invalidate and retry with fallback...`);
+        _discoveredWorkingGroqModel = null;
+        // Try fallback between 70b and 8b
+        const fallbackModel = (model === 'llama-3.3-70b-versatile') ? 'llama-3.1-8b-instant' : 'llama-3.3-70b-versatile';
+        const res = await GroqProvider.streamGroq(apiKey, fallbackModel, prompt, options, onChunk);
+        _discoveredWorkingGroqModel = fallbackModel;
+        return res;
+      }
+      throw err;
+    }
+  }
 
   /**
    * Enforce minimum spacing between calls.
@@ -99,7 +216,7 @@
         );
       }
       console.log('[ModelGateway] No Gemini key found; using Groq primary.');
-      const groqRes = await GroqProvider.callGroq(keys.groqKey, 'llama-3.1-8b-instant', prompt, {
+      const groqRes = await executeGroqCall(keys.groqKey, prompt, {
         systemPrompt,
         temperature,
         maxOutputTokens: maxTokens,
@@ -143,17 +260,17 @@
           };
         } catch (err) {
           lastError = err;
-          if (err.code === 'MODEL_NOT_FOUND') {
-            console.warn(`[ModelGateway] Model '${model}' returned 404. Trying next candidate...`);
+          if (err.code === 'MODEL_NOT_FOUND' || err.code === 'SERVER_ERROR' || err.code === 'TIMEOUT') {
+            console.warn(`[ModelGateway] Model '${model}' failed (${err.code}). Trying next candidate...`);
             continue;
           }
           throw err;
         }
       }
 
-      // If predefined models 404, query ListModels dynamically
+      // If predefined models failed, query ListModels dynamically
       try {
-        console.log('[ModelGateway] Predefined candidates 404. Querying ListModels...');
+        console.log('[ModelGateway] Predefined candidates unavailable. Querying ListModels...');
         const available = await GeminiProvider.listModels(keys.geminiKey);
         if (available && available.length > 0) {
           const sorted = [...available].sort((a, b) => b.name.localeCompare(a.name));
@@ -176,7 +293,7 @@
                 isFallback: false,
               };
             } catch (callErr) {
-              if (callErr.code === 'MODEL_NOT_FOUND') continue;
+              if (callErr.code === 'MODEL_NOT_FOUND' || callErr.code === 'SERVER_ERROR' || callErr.code === 'TIMEOUT') continue;
               throw callErr;
             }
           }
@@ -192,8 +309,8 @@
     let fallbackFn = null;
     if (task !== 'vision' && hasGroq) {
       fallbackFn = async () => {
-        console.warn('[ModelGateway] Executing Groq fallback (llama-3.1-8b-instant)...');
-        const groqRes = await GroqProvider.callGroq(keys.groqKey, 'llama-3.1-8b-instant', prompt, {
+        console.warn('[ModelGateway] Executing Groq fallback with model candidate resolution...');
+        const groqRes = await executeGroqCall(keys.groqKey, prompt, {
           systemPrompt,
           temperature,
           maxOutputTokens: maxTokens,
@@ -266,7 +383,7 @@
           false
         );
       }
-      const groqRes = await GroqProvider.streamGroq(keys.groqKey, 'llama-3.1-8b-instant', prompt, {
+      const groqRes = await executeGroqStream(keys.groqKey, prompt, {
         systemPrompt,
         temperature,
         maxOutputTokens: maxTokens,
@@ -310,12 +427,46 @@
           };
         } catch (err) {
           lastError = err;
-          if (err.code === 'MODEL_NOT_FOUND') {
-            console.warn(`[ModelGateway] Stream: Model '${model}' returned 404. Trying next...`);
+          if (err.code === 'MODEL_NOT_FOUND' || err.code === 'SERVER_ERROR' || err.code === 'TIMEOUT') {
+            console.warn(`[ModelGateway] Stream: Model '${model}' failed (${err.code}). Trying next...`);
             continue;
           }
           throw err;
         }
+      }
+
+      // If predefined models failed, query ListModels dynamically for streaming
+      try {
+        console.log('[ModelGateway] Predefined stream candidates unavailable. Querying ListModels...');
+        const available = await GeminiProvider.listModels(keys.geminiKey);
+        if (available && available.length > 0) {
+          const sorted = [...available].sort((a, b) => b.name.localeCompare(a.name));
+          for (const item of sorted) {
+            const modelId = item.name.replace(/^models\//, '');
+            try {
+              const result = await GeminiProvider.streamGemini(keys.geminiKey, modelId, prompt, {
+                systemPrompt,
+                temperature,
+                maxOutputTokens: maxTokens,
+                signal,
+                inlineData,
+              }, onChunk);
+
+              _discoveredWorkingModel = modelId;
+              return {
+                text: result.text,
+                model: result.model,
+                provider: 'gemini',
+                isFallback: false,
+              };
+            } catch (streamErr) {
+              if (streamErr.code === 'MODEL_NOT_FOUND' || streamErr.code === 'SERVER_ERROR' || streamErr.code === 'TIMEOUT') continue;
+              throw streamErr;
+            }
+          }
+        }
+      } catch (discErr) {
+        // Fall through to throw lastError
       }
 
       throw lastError;
@@ -325,8 +476,8 @@
     let fallbackFn = null;
     if (task !== 'vision' && hasGroq) {
       fallbackFn = async () => {
-        console.warn('[ModelGateway] Stream: Switching to Groq streaming fallback...');
-        const groqResult = await GroqProvider.streamGroq(keys.groqKey, 'llama-3.1-8b-instant', prompt, {
+        console.warn('[ModelGateway] Stream: Switching to Groq streaming fallback with model resolution...');
+        const groqResult = await executeGroqStream(keys.groqKey, prompt, {
           systemPrompt,
           temperature,
           maxOutputTokens: maxTokens,
@@ -365,6 +516,7 @@
    */
   function clearModelCache() {
     _discoveredWorkingModel = null;
+    _discoveredWorkingGroqModel = null;
   }
 
   // Export

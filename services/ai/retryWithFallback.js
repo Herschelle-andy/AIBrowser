@@ -59,6 +59,47 @@
   }
 
   /**
+   * Determine whether an error is eligible for fallback to secondary provider (Groq)
+   * or retry (rate limits, server 5xx outages, timeouts, and network drops).
+   * @param {Error|Object} err
+   * @returns {boolean}
+   */
+  function isRetryableOrFallbackEligible(err) {
+    if (!err) return false;
+
+    if (isRateLimitOrQuotaError(err)) return true;
+
+    const status = err.status;
+    if (status === 500 || status === 502 || status === 503 || status === 504 || status === 404) {
+      return true;
+    }
+
+    const code = (err.code || '').toUpperCase();
+    if (
+      code === 'SERVER_ERROR' ||
+      code === 'TIMEOUT' ||
+      code === 'NETWORK_ERROR' ||
+      code === 'MODEL_NOT_FOUND' ||
+      code === 'EMPTY_RESPONSE'
+    ) {
+      return true;
+    }
+
+    const msg = (err.message || '').toLowerCase();
+    if (
+      msg.includes('temporarily unavailable') ||
+      msg.includes('took too long') ||
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('service unavailable')
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Execute primary function with exponential backoff retries and fallback execution.
    *
    * @template T
@@ -88,13 +129,13 @@
       } catch (err) {
         lastError = err;
 
-        // Non-retryable error (invalid API key, safety block, 400) -> throw immediately
-        if (!isRateLimitOrQuotaError(err)) {
+        // Non-retryable client error (invalid API key, safety block, 400 bad request) -> throw immediately
+        if (!isRetryableOrFallbackEligible(err)) {
           throw err;
         }
 
-        // If we haven't reached max retries, calculate backoff and sleep
-        if (attempt < maxRetries) {
+        // If rate limited and retries remain, back off with jitter
+        if (attempt < maxRetries && isRateLimitOrQuotaError(err)) {
           // Check for Retry-After header / property (Edge case 2.4.3)
           const retryAfterSeconds = Number(err.retryAfterSeconds || 0);
           const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
@@ -119,8 +160,16 @@
           continue;
         }
 
-        // All primary retries exhausted
-        console.warn('[RetryWithFallback] Primary retries exhausted.');
+        // For transient 500/503 server error, allow 1 quick retry if attempts remain
+        if (attempt === 0 && (err.code === 'SERVER_ERROR' || err.status === 500 || err.status === 503)) {
+          console.warn('[RetryWithFallback] Server error on primary attempt. Quick retry in 1.2s...');
+          await sleep(1200);
+          continue;
+        }
+
+        // Break to fallback for timeouts or exhausted primary
+        console.warn(`[RetryWithFallback] Primary attempt failed with ${err.code || err.message}. Moving to fallback...`);
+        break;
       }
     }
 
@@ -152,6 +201,11 @@
       throw visionError;
     }
 
+    if (!isRateLimitOrQuotaError(lastError)) {
+      // Re-throw specific server/timeout/network error with guidance
+      throw lastError;
+    }
+
     // Edge case 2.4.1: Groq API key is not set
     if (!hasGroqKey) {
       const missingGroq = new Error('Rate limit reached. Add a free Groq API key in Settings for automatic backup, or try again in a few minutes.');
@@ -170,6 +224,7 @@
   globalThis.RetryWithFallback = {
     callWithFallback,
     isRateLimitOrQuotaError,
+    isRetryableOrFallbackEligible,
     sleep,
   };
 })();
