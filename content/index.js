@@ -24,6 +24,7 @@
           success: true,
           alive: true,
           hasScanner: Boolean(globalThis.SahayakScanner),
+          hasOverlay: Boolean(globalThis.SahayakOverlay),
           url: window.location.href,
           title: document.title
         });
@@ -53,6 +54,85 @@
             success: false,
             code: 'SCAN_FAILED',
             error: err.message || 'Failed to scan elements.'
+          });
+        }
+        return true;
+      }
+
+      case 'SHOW_BADGES': {
+        const overlay = globalThis.SahayakOverlay || (typeof SahayakOverlay !== 'undefined' ? SahayakOverlay : null);
+        if (!overlay) {
+          sendResponse({
+            success: false,
+            code: 'OVERLAY_MISSING',
+            error: 'Overlay module is not initialized on this page.'
+          });
+          return true;
+        }
+
+        try {
+          const elements = message.payload?.elements || message.elements;
+          const result = overlay.showBadges(elements);
+          sendResponse(result);
+        } catch (err) {
+          console.error('[Sahayak] Show badges error:', err);
+          sendResponse({
+            success: false,
+            code: 'SHOW_BADGES_FAILED',
+            error: err.message || 'Failed to display badges.'
+          });
+        }
+        return true;
+      }
+
+      case 'CLEAR_BADGES': {
+        const overlay = globalThis.SahayakOverlay || (typeof SahayakOverlay !== 'undefined' ? SahayakOverlay : null);
+        if (!overlay) {
+          sendResponse({
+            success: false,
+            code: 'OVERLAY_MISSING',
+            error: 'Overlay module is not initialized on this page.'
+          });
+          return true;
+        }
+
+        try {
+          const result = overlay.clearBadges();
+          sendResponse(result);
+        } catch (err) {
+          console.error('[Sahayak] Clear badges error:', err);
+          sendResponse({
+            success: false,
+            code: 'CLEAR_BADGES_FAILED',
+            error: err.message || 'Failed to clear badges.'
+          });
+        }
+        return true;
+      }
+
+      case 'HIGHLIGHT_ELEMENT': {
+        const overlay = globalThis.SahayakOverlay || (typeof SahayakOverlay !== 'undefined' ? SahayakOverlay : null);
+        if (!overlay) {
+          sendResponse({
+            success: false,
+            code: 'OVERLAY_MISSING',
+            error: 'Overlay module is not initialized on this page.'
+          });
+          return true;
+        }
+
+        try {
+          const elementId = message.payload?.elementId !== undefined
+            ? message.payload.elementId
+            : message.elementId;
+          const result = overlay.highlightElement(elementId);
+          sendResponse(result);
+        } catch (err) {
+          console.error('[Sahayak] Highlight element error:', err);
+          sendResponse({
+            success: false,
+            code: 'HIGHLIGHT_FAILED',
+            error: err.message || 'Failed to highlight element.'
           });
         }
         return true;

@@ -381,6 +381,19 @@ async function handleMessage(message, sender) {
       return await handleScanElements(message.payload || {});
     }
 
+    // ── Numbered Badges & Overlay (Slice 3.2) ─────────────────
+    case 'SHOW_BADGES': {
+      return await handleForwardToTab(message);
+    }
+
+    case 'CLEAR_BADGES': {
+      return await handleForwardToTab(message);
+    }
+
+    case 'HIGHLIGHT_ELEMENT': {
+      return await handleForwardToTab(message);
+    }
+
     // ── Health Check ─────────────────────────────────────────
     case 'PING': {
       return { success: true, data: { alive: true, timestamp: Date.now() } };
@@ -404,10 +417,13 @@ async function ensureContentScriptInjected(tabId) {
   try {
     const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
     if (ping && ping.alive) {
-      if (!ping.hasScanner) {
+      const toInject = [];
+      if (!ping.hasScanner) toInject.push('content/scanner.js');
+      if (!ping.hasOverlay) toInject.push('content/overlay.js');
+      if (toInject.length > 0) {
         await chrome.scripting.executeScript({
           target: { tabId },
-          files: ['content/scanner.js']
+          files: toInject
         });
       }
       return true;
@@ -424,6 +440,7 @@ async function ensureContentScriptInjected(tabId) {
         'content/reader.js',
         'content/youtube.js',
         'content/scanner.js',
+        'content/overlay.js',
         'content/index.js'
       ]
     });
@@ -433,6 +450,41 @@ async function ensureContentScriptInjected(tabId) {
   } catch (err) {
     console.error('[Sahayak] Script injection failed:', err);
     throw err;
+  }
+}
+
+/**
+ * Forwards an overlay or content message (SHOW_BADGES, CLEAR_BADGES, HIGHLIGHT_ELEMENT)
+ * to the active tab, ensuring content scripts are injected.
+ */
+async function handleForwardToTab(message) {
+  let tabId = message.payload?.tabId || message.tabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) {
+      return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
+    }
+    if (isRestrictedUrl(tab.url)) {
+      return {
+        success: false,
+        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
+      };
+    }
+    tabId = tab.id;
+  }
+
+  try {
+    await ensureContentScriptInjected(tabId);
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (err) {
+    console.error(`[Sahayak] Message forwarding error (${message.type}):`, err);
+    return {
+      success: false,
+      error: {
+        code: 'COMMUNICATION_FAILED',
+        message: err.message || `Could not send ${message.type} to page.`
+      }
+    };
   }
 }
 
