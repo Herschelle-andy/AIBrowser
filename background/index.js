@@ -17,6 +17,7 @@ importScripts(
   '/services/ai/retryWithFallback.js',
   '/services/ai/modelGateway.js',
   '/services/ai/promptBuilder.js',
+  '/services/state/checkpoint.js',
   '/services/state/agentStateMachine.js',
   '/background/contextMenus.js',
   '/background/tabCapture.js'
@@ -408,6 +409,17 @@ async function handleMessage(message, sender) {
       return { success: true, data: AgentStateMachine.getState() };
     }
 
+    // ── Task History & Checkpoints (Slice 3.6) ────────────────
+    case 'GET_TASK_HISTORY': {
+      const history = await SahayakCheckpoint.getTaskHistory();
+      return { success: true, data: history };
+    }
+
+    case 'CLEAR_TASK_HISTORY': {
+      await SahayakCheckpoint.clearTaskHistory();
+      return { success: true };
+    }
+
     // ── Numbered Badges, Overlay & Action Executor (Slices 3.2, 3.5) ─
     case 'SHOW_BADGES': {
       return await handleForwardToTab(message);
@@ -764,6 +776,63 @@ function checkIsConsequential(element, action) {
   return CONSEQUENTIAL_KEYWORDS.some((re) => re.test(haystack));
 }
 
+// ── Service Worker Keepalive & Checkpoint Rehydration (§15.3, §15.4, Slice 3.6)
+const KEEPALIVE_ALARM_NAME = 'sahayak-keepalive';
+
+function startKeepaliveAlarm() {
+  try {
+    if (chrome.alarms && chrome.alarms.create) {
+      chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 }); // ~24s
+    }
+  } catch (err) {
+    console.warn('[Sahayak] Could not create keepalive alarm:', err);
+  }
+}
+
+function stopKeepaliveAlarm() {
+  try {
+    if (chrome.alarms && chrome.alarms.clear) {
+      chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+    }
+  } catch (err) {
+    console.warn('[Sahayak] Could not clear keepalive alarm:', err);
+  }
+}
+
+if (chrome.alarms && chrome.alarms.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm && alarm.name === KEEPALIVE_ALARM_NAME) {
+      if (chrome.storage && chrome.storage.session) {
+        chrome.storage.session.set({ sahayak_heartbeat: Date.now() }).catch(() => {});
+      }
+    }
+  });
+}
+
+// Rehydrate active state on service worker wake-up (§15.3 & Slice 3.6)
+(async () => {
+  try {
+    const restored = await AgentStateMachine.init();
+    if (restored && restored.state !== AgentStateMachine.AgentState.IDLE && restored.state !== AgentStateMachine.AgentState.COMPLETED) {
+      console.log(`[Sahayak] Service worker rehydrated state: ${restored.state} (Step ${restored.stepCount}/${restored.maxSteps})`);
+      if (restored.state === AgentStateMachine.AgentState.AWAITING_APPROVAL) {
+        // Re-send proposed action to side panel for approval (§15.3)
+        setTimeout(() => {
+          if (chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({
+              type: 'AGENT_STATE_CHANGED',
+              payload: { ...restored }
+            }).catch(() => {});
+          }
+        }, 250);
+      }
+      startKeepaliveAlarm();
+    }
+  } catch (err) {
+    console.warn('[Sahayak] Service worker state rehydration error:', err);
+  }
+})();
+
 /**
  * Start a new agent execution loop task (Slice 3.4).
  */
@@ -809,6 +878,9 @@ async function handleAgentStart(payload = {}) {
     startedAt: Date.now()
   });
 
+  // Start keepalive alarm during active task (§15.4)
+  startKeepaliveAlarm();
+
   return await runAgentStep();
 }
 
@@ -822,14 +894,29 @@ async function runAgentStep(skipNote = null) {
   const stepCount = state.stepCount;
   const maxSteps = state.maxSteps;
 
+  // Step limit enforcement (Slice 3.6): auto-stop when stepCount > maxSteps
   if (stepCount > maxSteps) {
     await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.COMPLETED, {
-      statusMessage: `Reached maximum step limit (${maxSteps} steps). Task ended.`,
-      currentAction: { action: 'done', reasoning: `Max step limit (${maxSteps}) reached.` }
+      statusMessage: 'Step limit reached.',
+      currentAction: { action: 'done', reasoning: `Step limit reached (${maxSteps} steps).` }
     });
     try {
       await chrome.tabs.sendMessage(tabId, { type: 'CLEAR_BADGES' });
     } catch (e) {}
+
+    const completedState = AgentStateMachine.getState();
+    await SahayakCheckpoint.saveTaskHistory({
+      id: Date.now(),
+      goal: completedState.goal,
+      steps: completedState.history,
+      totalSteps: completedState.history.length,
+      maxSteps: completedState.maxSteps,
+      dryRun: completedState.dryRun,
+      status: 'limit_reached',
+      message: 'Step limit reached.'
+    });
+    stopKeepaliveAlarm();
+
     return { success: true, data: AgentStateMachine.getState() };
   }
 
@@ -966,13 +1053,15 @@ async function handleAgentApprove(payload = {}) {
   const action = state.currentAction;
   const stepIndex = state.stepCount;
 
-  // Record approval in history
+  // Record approval in history (§11.5)
   const history = [
     ...state.history,
     {
       step: stepIndex,
       action,
       decision: 'approved',
+      executed: !state.dryRun,
+      dryRun: Boolean(state.dryRun),
       timestamp: Date.now()
     }
   ];
@@ -987,10 +1076,23 @@ async function handleAgentApprove(payload = {}) {
     try {
       await chrome.tabs.sendMessage(state.tabId, { type: 'CLEAR_BADGES' });
     } catch (e) {}
+
+    await SahayakCheckpoint.saveTaskHistory({
+      id: Date.now(),
+      goal: state.goal,
+      steps: history,
+      totalSteps: history.length,
+      maxSteps: state.maxSteps,
+      dryRun: state.dryRun,
+      status: 'completed',
+      message: 'Goal completed successfully'
+    });
+    stopKeepaliveAlarm();
+
     return { success: true, data: AgentStateMachine.getState() };
   }
 
-  // Transition to EXECUTING (Slice 3.5)
+  // Transition to EXECUTING (Slice 3.5 & 3.6)
   await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.EXECUTING, {
     history,
     stepCount: stepIndex + 1,
@@ -999,13 +1101,17 @@ async function handleAgentApprove(payload = {}) {
       : `Step ${stepIndex}: Executing ${action?.action}…`
   });
 
-  // Execute synthetic action if not dry run
-  if (!state.dryRun && action) {
+  // Execute action (synthetic events for live, pulsing highlight + toast for dry-run)
+  if (action) {
     try {
       await ensureContentScriptInjected(state.tabId);
+      const actionPayload = {
+        ...action,
+        dryRun: Boolean(state.dryRun)
+      };
       const execRes = await chrome.tabs.sendMessage(state.tabId, {
         type: 'EXECUTE_ACTION',
-        payload: { action }
+        payload: { action: actionPayload }
       });
 
       if (!execRes || !execRes.success) {
@@ -1021,6 +1127,8 @@ async function handleAgentApprove(payload = {}) {
       try {
         await chrome.tabs.sendMessage(state.tabId, { type: 'CLEAR_BADGES' });
       } catch (e) {}
+      stopKeepaliveAlarm();
+
       return {
         success: false,
         error: { code: 'EXECUTION_FAILED', message: err.message }
@@ -1029,7 +1137,7 @@ async function handleAgentApprove(payload = {}) {
   }
 
   // Settle delay: give DOM time to update after action
-  const settleDelay = state.dryRun ? 200 : 400;
+  const settleDelay = state.dryRun ? 300 : 400;
   await new Promise((resolve) => setTimeout(resolve, settleDelay));
 
   // Advance loop: re-scan and propose next action
@@ -1055,6 +1163,8 @@ async function handleAgentSkip(payload = {}) {
       step: stepIndex,
       action,
       decision: 'skipped',
+      executed: false,
+      dryRun: Boolean(state.dryRun),
       timestamp: Date.now()
     }
   ];
@@ -1085,6 +1195,24 @@ async function handleAgentStop() {
       await chrome.tabs.sendMessage(tabId, { type: 'CLEAR_BADGES' });
     } catch (e) {}
   }
+
+  if (state.history && state.history.length > 0) {
+    await SahayakCheckpoint.saveTaskHistory({
+      id: Date.now(),
+      goal: state.goal,
+      steps: state.history,
+      totalSteps: state.history.length,
+      maxSteps: state.maxSteps,
+      dryRun: state.dryRun,
+      status: 'stopped',
+      message: 'Task stopped by user'
+    });
+  }
+
+  stopKeepaliveAlarm();
+  await AgentStateMachine.reset();
+  return { success: true, data: AgentStateMachine.getState() };
+}
 
   await AgentStateMachine.reset();
   return { success: true, data: AgentStateMachine.getState() };

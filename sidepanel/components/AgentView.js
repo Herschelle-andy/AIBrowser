@@ -138,13 +138,8 @@
             </button>
           </div>
 
-          <!-- History Accordion -->
-          <div id="agent-history-box" class="agent-history-box" style="display: none;">
-            <div class="history-header">
-              <span class="control-label">Step History:</span>
-            </div>
-            <ul id="agent-history-list" class="agent-history-list"></ul>
-          </div>
+          <!-- Action Log Component Container (Slice 3.6) -->
+          <div id="agent-action-log-container" class="agent-action-log-container"></div>
         </div>
 
         <!-- ── Section: Find It For Me (Slice 3.3) ────────────────────── -->
@@ -227,8 +222,12 @@
       const stateRes = await chrome.runtime.sendMessage({ type: 'GET_AGENT_STATE' });
       if (stateRes && stateRes.success && stateRes.data) {
         updateAgentUI(stateRes.data);
+      } else {
+        renderActionLog({ history: [], state: 'IDLE', dryRun: false });
       }
-    } catch (e) {}
+    } catch (e) {
+      renderActionLog({ history: [], state: 'IDLE', dryRun: false });
+    }
 
     // Register broadcast listener
     if (!isMessageListenerRegistered && chrome.runtime && chrome.runtime.onMessage) {
@@ -530,13 +529,14 @@
       if (setupPanel) setupPanel.style.display = 'block';
       if (activePanel) activePanel.style.display = 'none';
       if (completionBanner) completionBanner.style.display = 'none';
+      renderActionLog(context);
       return;
     }
 
     // COMPLETED or CLEANUP with finish/error
     if (state === 'COMPLETED' || (state === 'CLEANUP' && context.error)) {
       showAgentCompletion(!context.error, context.statusMessage || (context.error ? 'Task ended with an error.' : 'Task completed successfully!'));
-      renderHistoryList(context.history);
+      renderActionLog(context);
       return;
     }
 
@@ -597,10 +597,8 @@
       cardContainer.innerHTML = '';
     }
 
-    // Update history list if present
-    if (context.history && context.history.length > 0) {
-      renderHistoryList(context.history);
-    }
+    // Update ActionLog (Slice 3.6)
+    renderActionLog(context);
   }
 
   /**
@@ -638,44 +636,30 @@
     const setupPanel = containerEl.querySelector('#agent-setup-panel');
     const activePanel = containerEl.querySelector('#agent-active-panel');
     const completionBanner = containerEl.querySelector('#agent-completion-banner');
-    const historyBox = containerEl.querySelector('#agent-history-box');
 
     if (setupPanel) setupPanel.style.display = 'block';
     if (activePanel) activePanel.style.display = 'none';
     if (completionBanner) completionBanner.style.display = 'none';
-    if (historyBox) historyBox.style.display = 'none';
 
+    renderActionLog({ history: [], state: 'IDLE', dryRun: false });
     chrome.runtime.sendMessage({ type: 'AGENT_STOP' }).catch(() => {});
   }
 
   /**
-   * Renders step history list.
+   * Renders the ActionLog component (Slice 3.6).
    */
-  function renderHistoryList(history = []) {
+  function renderActionLog(context = {}) {
     if (!containerEl) return;
-    const historyBox = containerEl.querySelector('#agent-history-box');
-    const historyList = containerEl.querySelector('#agent-history-list');
-    if (!historyBox || !historyList) return;
+    const logContainer = containerEl.querySelector('#agent-action-log-container');
+    if (!logContainer) return;
 
-    if (!history || history.length === 0) {
-      historyBox.style.display = 'none';
-      return;
+    if (window.ActionLog && typeof window.ActionLog.render === 'function') {
+      window.ActionLog.render(logContainer, {
+        history: context.history || [],
+        isDryRun: Boolean(context.dryRun),
+        status: context.state || 'IDLE'
+      });
     }
-
-    historyBox.style.display = 'block';
-    historyList.innerHTML = history.map((item) => {
-      const act = item.action || {};
-      const type = (act.action || 'action').toUpperCase();
-      const decisionClass = item.decision === 'approved' ? 'decision-approved' : 'decision-skipped';
-      return `
-        <li class="history-item">
-          <span class="history-step">#${item.step}</span>
-          <span class="history-type">${type}</span>
-          <span class="history-desc">${escapeHtml(act.reasoning || act.value || `Element #${act.targetElementId || ''}`)}</span>
-          <span class="history-decision ${decisionClass}">${item.decision}</span>
-        </li>
-      `;
-    }).join('');
   }
 
   /**

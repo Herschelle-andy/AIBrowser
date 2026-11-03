@@ -65,11 +65,29 @@
   let currentContext = createDefaultContext();
 
   /**
+   * Helper to get Checkpoint manager.
+   */
+  function getCheckpointManager() {
+    return (typeof SahayakCheckpoint !== 'undefined' ? SahayakCheckpoint : null)
+      || (typeof globalThis !== 'undefined' ? globalThis.SahayakCheckpoint : null)
+      || (typeof window !== 'undefined' ? window.SahayakCheckpoint : null);
+  }
+
+  /**
    * Load checkpointed state from session storage (e.g. after worker resume).
    * @returns {Promise<Object>}
    */
   async function init() {
     try {
+      const cp = getCheckpointManager();
+      if (cp && typeof cp.loadCheckpoint === 'function') {
+        const stored = await cp.loadCheckpoint();
+        if (stored) {
+          currentContext = { ...createDefaultContext(), ...stored };
+          return currentContext;
+        }
+      }
+
       if (chrome.storage && chrome.storage.session) {
         const stored = await chrome.storage.session.get(STORAGE_KEY);
         if (stored && stored[STORAGE_KEY]) {
@@ -121,8 +139,12 @@
       max: currentContext.maxSteps
     });
 
-    // Write checkpoint to session storage
+    // Write checkpoint to session storage (Slice 3.6 & §15.2)
     try {
+      const cp = getCheckpointManager();
+      if (cp && typeof cp.saveCheckpoint === 'function') {
+        await cp.saveCheckpoint(currentContext);
+      }
       if (chrome.storage && chrome.storage.session) {
         await chrome.storage.session.set({ [STORAGE_KEY]: currentContext });
       }
@@ -152,6 +174,10 @@
   async function reset() {
     currentContext = createDefaultContext();
     try {
+      const cp = getCheckpointManager();
+      if (cp && typeof cp.clearCheckpoint === 'function') {
+        await cp.clearCheckpoint();
+      }
       if (chrome.storage && chrome.storage.session) {
         await chrome.storage.session.set({ [STORAGE_KEY]: currentContext });
       }

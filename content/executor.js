@@ -229,8 +229,87 @@
   }
 
   /**
+   * Shows a floating toast message on the webpage (for Dry-Run feedback).
+   * @param {string} message
+   */
+  function showDryRunToast(message) {
+    if (typeof document === 'undefined' || !document.createElement) return;
+
+    let toast = document.getElementById('sahayak-dryrun-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'sahayak-dryrun-toast';
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2147483647;
+        background: #4a148c;
+        color: #ffffff;
+        padding: 10px 20px;
+        border-radius: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        border: 1px solid #ba68c8;
+        pointer-events: none;
+        transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        opacity: 0;
+      `;
+      (document.body || document.documentElement).appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+
+    if (toast._timer) clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(8px)';
+    }, 2800);
+  }
+
+  /**
+   * Applies pulsing purple border highlight to an element for dry-run mode (§11.5).
+   * @param {HTMLElement} element
+   */
+  function applyDryRunHighlight(element) {
+    if (!element) return;
+
+    if (typeof document !== 'undefined' && document.createElement && !document.getElementById('sahayak-pulse-style')) {
+      const style = document.createElement('style');
+      style.id = 'sahayak-pulse-style';
+      style.textContent = `
+        @keyframes sahayak-pulse {
+          0%, 100% { box-shadow: 0 0 0 3px rgba(156, 39, 176, 0.4); }
+          50% { box-shadow: 0 0 0 6px rgba(156, 39, 176, 0.8); }
+        }
+        .sahayak-dryrun-pulse {
+          animation: sahayak-pulse 1.2s infinite ease-in-out !important;
+          outline: 2px solid #9c27b0 !important;
+          outline-offset: 2px !important;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+
+    if (typeof document !== 'undefined' && document.querySelectorAll) {
+      const prev = document.querySelectorAll('.sahayak-dryrun-pulse');
+      prev.forEach((el) => el.classList.remove('sahayak-dryrun-pulse'));
+    }
+
+    if (element.classList && typeof element.classList.add === 'function') {
+      element.classList.add('sahayak-dryrun-pulse');
+    }
+  }
+
+  /**
    * Main execution dispatcher.
    * Resolves target element via SahayakScanner and runs appropriate synthetic events.
+   * If action.dryRun is active, highlights element and displays toast without firing events (§11.5).
    *
    * @param {Object} action - BrowserAction
    * @returns {Object} { success: boolean, ... }
@@ -241,7 +320,66 @@
     }
 
     const type = (action.action || '').toLowerCase();
+    const isDryRun = Boolean(action.dryRun || action.isDryRun);
 
+    // ── Dry-Run Mode Handler (§11.5) ──────────────────────────
+    if (isDryRun) {
+      if (type === 'done') {
+        showDryRunToast('Dry Run — Task Complete');
+        return { success: true, executed: false, dryRun: true, action: 'done' };
+      }
+
+      if (type === 'scroll') {
+        const scrollDir = action.value || 'down';
+        showDryRunToast(`Dry Run — would scroll ${scrollDir}`);
+        return { success: true, executed: false, dryRun: true, action: 'scroll', value: scrollDir };
+      }
+
+      const elementId = action.targetElementId;
+      if (!elementId) {
+        throw new Error(`Action "${type}" requires targetElementId.`);
+      }
+
+      const scanner = globalThis.SahayakScanner || (typeof SahayakScanner !== 'undefined' ? SahayakScanner : null) || (typeof window !== 'undefined' ? window.SahayakScanner : null);
+      if (!scanner || typeof scanner.getElement !== 'function') {
+        throw new Error('SahayakScanner module is not available to resolve elements.');
+      }
+
+      const element = scanner.getElement(elementId);
+      if (!element || !element.isConnected) {
+        throw new Error(`Element #${elementId} is not found on the page or was detached.`);
+      }
+
+      if (typeof element.scrollIntoView === 'function') {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
+
+      applyDryRunHighlight(element);
+
+      let toastText = '';
+      if (type === 'type') {
+        toastText = `Dry Run — would type '${action.value || ''}' into element #${elementId}`;
+      } else if (type === 'click') {
+        toastText = `Dry Run — would click element #${elementId}`;
+      } else if (type === 'select') {
+        toastText = `Dry Run — would select '${action.value || ''}' in element #${elementId}`;
+      } else {
+        toastText = `Dry Run — would perform ${type} on element #${elementId}`;
+      }
+
+      showDryRunToast(toastText);
+
+      return {
+        success: true,
+        executed: false,
+        dryRun: true,
+        action: type,
+        elementId,
+        value: action.value
+      };
+    }
+
+    // ── Live Execution Mode ───────────────────────────────────
     if (type === 'done') {
       return { success: true, action: 'done', reasoning: action.reasoning || 'Goal completed' };
     }
@@ -290,7 +428,9 @@
     executeClick,
     executeType,
     executeSelect,
-    executeScroll
+    executeScroll,
+    showDryRunToast,
+    applyDryRunHighlight
   };
 
   globalThis.SahayakExecutor = SahayakExecutor;
