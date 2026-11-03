@@ -465,6 +465,106 @@
     return { systemPrompt, userPrompt };
   }
 
+  /**
+   * Build prompt for the Agent Execution Loop (Slice 3.4).
+   * Generates a structured JSON proposal for the single next best browser action.
+   *
+   * @param {string} goal - User's objective
+   * @param {Object} actionMap - Current PageActionMap containing live elements
+   * @param {Array<Object>} [previousActions=[]] - List of actions taken in earlier steps
+   * @param {Object} [userProfile=null] - Optional user profile memory for form filling
+   * @param {string} [language='en'] - 'en' | 'hi-en'
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildAgentActionPrompt(goal, actionMap, previousActions = [], userProfile = null, language = 'en') {
+    const langRule = getLanguageInstruction(language);
+
+    const systemPrompt = [
+      'You are Sahayak Browser Agent, an autonomous browser automation AI that operates with human-in-the-loop approval.',
+      langRule,
+      'Your task is to achieve the user specified goal step-by-step by proposing ONE browser action at a time.',
+      'Always propose exactly ONE action corresponding to the current state of the page.',
+      'You must evaluate whether the proposed action is consequential (e.g. clicks Submit, Pay, Place Order, Delete, Transfer, Send). Set isConsequential: true for such actions.',
+      'When the overall goal is fully satisfied, propose action: "done".',
+      'You MUST return valid JSON adhering strictly to the schema.'
+    ].join(' ');
+
+    // Format previous actions
+    const historyText = (previousActions && previousActions.length > 0)
+      ? previousActions.map((item, idx) => {
+          const act = item.action || item;
+          const desc = act.action === 'type'
+            ? `Type "${act.value}" into element #${act.targetElementId}`
+            : (act.action === 'click' ? `Click element #${act.targetElementId}` : `${act.action} (${act.reasoning || ''})`);
+          const status = item.decision ? `[Decision: ${item.decision}]` : '';
+          return `Step ${idx + 1}: ${desc} ${status}`.trim();
+        }).join('\n')
+      : '(None — this is Step 1)';
+
+    // Format element action map
+    const elementsList = (actionMap.elements || []).map((el) => {
+      const parts = [`#${el.id}: <${el.tag.toLowerCase()}`];
+      if (el.type) parts.push(`type="${el.type}"`);
+      if (el.name) parts.push(`name="${el.name}"`);
+      if (el.role) parts.push(`role="${el.role}"`);
+      parts.push(`>`);
+      if (el.text) parts.push(`text="${el.text}"`);
+      if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`);
+      if (el.value) parts.push(`value="${el.value}"`);
+      if (el.href) parts.push(`href="${el.href}"`);
+      return parts.join(' ');
+    }).join('\n');
+
+    // Optional user profile context (Slice 4.1 readiness)
+    let profileBlock = '';
+    if (userProfile && typeof userProfile === 'object') {
+      profileBlock = [
+        '<USER_PROFILE>',
+        JSON.stringify(userProfile, null, 2),
+        '</USER_PROFILE>',
+        ''
+      ].join('\n');
+    }
+
+    const userPrompt = [
+      `User Goal: "${goal}"`,
+      `Page Title: ${actionMap.title || 'Untitled'}`,
+      `Page URL: ${actionMap.url || 'Unknown'}`,
+      '',
+      profileBlock,
+      'Actions Taken So Far:',
+      '--- BEGIN HISTORY ---',
+      historyText,
+      '--- END HISTORY ---',
+      '',
+      'Available Interactive Elements On Live Page:',
+      '--- BEGIN ELEMENTS ---',
+      elementsList || '(No interactive elements found on this page)',
+      '--- END ELEMENTS ---',
+      '',
+      'Instructions:',
+      '1. Review the User Goal, the Actions Taken So Far, and the Available Interactive Elements.',
+      '2. Propose the single next logical browser action to make progress toward the goal.',
+      '3. Allowed action types: "click", "type", "select", "scroll", "done".',
+      '   - "click": must provide targetElementId (numeric ID from elements list)',
+      '   - "type": must provide targetElementId and value (string to type)',
+      '   - "select": must provide targetElementId and value (option string to select)',
+      '   - "scroll": value should be "down" or "up"',
+      '   - "done": if the goal is completed or no further action is needed',
+      '4. Set isConsequential: true if this action submits a form, executes a purchase, deletes data, transfers money, or alters external state.',
+      '5. Respond with valid JSON in this exact structure:',
+      '{',
+      '  "action": "click" | "type" | "select" | "scroll" | "done",',
+      '  "targetElementId": <number or null>,',
+      '  "value": "<string or null>",',
+      '  "reasoning": "<one-sentence explanation of why this step was chosen>",',
+      '  "isConsequential": true | false',
+      '}'
+    ].filter(Boolean).join('\n');
+
+    return { systemPrompt, userPrompt };
+  }
+
   // Export
   globalThis.PromptBuilder = {
     getLanguageInstruction,
@@ -476,6 +576,7 @@
     buildDraftReplyPrompt,
     buildContextActionPrompt,
     buildFindElementPrompt,
+    buildAgentActionPrompt,
     chunkAndSelectContext,
     formatConversationHistory
   };

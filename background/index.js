@@ -17,6 +17,7 @@ importScripts(
   '/services/ai/retryWithFallback.js',
   '/services/ai/modelGateway.js',
   '/services/ai/promptBuilder.js',
+  '/services/state/agentStateMachine.js',
   '/background/contextMenus.js',
   '/background/tabCapture.js'
 );
@@ -386,6 +387,27 @@ async function handleMessage(message, sender) {
       return await handleFindElement(message.payload || message || {});
     }
 
+    // ── Agent Loop & Approval UI (Slice 3.4) ─────────────────
+    case 'AGENT_START': {
+      return await handleAgentStart(message.payload || message || {});
+    }
+
+    case 'AGENT_APPROVE': {
+      return await handleAgentApprove(message.payload || message || {});
+    }
+
+    case 'AGENT_SKIP': {
+      return await handleAgentSkip(message.payload || message || {});
+    }
+
+    case 'AGENT_STOP': {
+      return await handleAgentStop();
+    }
+
+    case 'GET_AGENT_STATE': {
+      return { success: true, data: AgentStateMachine.getState() };
+    }
+
     // ── Numbered Badges & Overlay (Slice 3.2) ─────────────────
     case 'SHOW_BADGES': {
       return await handleForwardToTab(message);
@@ -712,6 +734,320 @@ async function handleFindElement(payload = {}) {
       provider: aiResult.provider
     }
   };
+}
+
+// ── Consequential Action Keywords (§12.5) ─────────────────────────────
+const CONSEQUENTIAL_KEYWORDS = [
+  /\bsubmit\b/i, /\bpay\b/i, /\bpurchase\b/i, /\bbuy\b/i,
+  /\bplace.?order\b/i, /\bconfirm.?order\b/i,
+  /\bdelete\b/i, /\bremove\b/i,
+  /\bsend\b/i, /\btransfer\b/i,
+  /\bcheckout\b/i, /\bproceed\b/i,
+];
+
+/**
+ * Checks whether an action or target element is consequential.
+ * @param {Object} element
+ * @param {Object} action
+ * @returns {boolean}
+ */
+function checkIsConsequential(element, action) {
+  if (action && action.isConsequential) return true;
+  if (!element) return false;
+  const haystack = [element.text, element.name, element.value, element.placeholder].filter(Boolean).join(' ');
+  return CONSEQUENTIAL_KEYWORDS.some((re) => re.test(haystack));
+}
+
+/**
+ * Start a new agent execution loop task (Slice 3.4).
+ */
+async function handleAgentStart(payload = {}) {
+  const goal = (payload.goal || '').trim();
+  const maxSteps = Math.min(Math.max(Number(payload.maxSteps) || 10, 1), 25);
+  const dryRun = Boolean(payload.dryRun);
+
+  if (!goal) {
+    return {
+      success: false,
+      error: { code: 'EMPTY_GOAL', message: 'Please enter a goal for the browser agent.' }
+    };
+  }
+
+  let tabId = payload.tabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) {
+      return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
+    }
+    if (isRestrictedUrl(tab.url)) {
+      return {
+        success: false,
+        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot automate internal browser or system pages.' }
+      };
+    }
+    tabId = tab.id;
+  }
+
+  // Reset any active state
+  await AgentStateMachine.reset();
+
+  await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.SCANNING, {
+    goal,
+    maxSteps,
+    dryRun,
+    stepCount: 1,
+    tabId,
+    history: [],
+    currentAction: null,
+    statusMessage: 'Starting task… scanning page.',
+    startedAt: Date.now()
+  });
+
+  return await runAgentStep();
+}
+
+/**
+ * Advances the agent loop for the current step.
+ */
+async function runAgentStep(skipNote = null) {
+  const state = AgentStateMachine.getState();
+  const tabId = state.tabId;
+  const goal = state.goal;
+  const stepCount = state.stepCount;
+  const maxSteps = state.maxSteps;
+
+  if (stepCount > maxSteps) {
+    await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.COMPLETED, {
+      statusMessage: `Reached maximum step limit (${maxSteps} steps). Task ended.`,
+      currentAction: { action: 'done', reasoning: `Max step limit (${maxSteps}) reached.` }
+    });
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'CLEAR_BADGES' });
+    } catch (e) {}
+    return { success: true, data: AgentStateMachine.getState() };
+  }
+
+  try {
+    // 1. Scan page
+    await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.SCANNING, {
+      statusMessage: `Step ${stepCount}/${maxSteps}: Scanning page…`
+    });
+    await ensureContentScriptInjected(tabId);
+    const scanRes = await chrome.tabs.sendMessage(tabId, { type: 'SCAN_ELEMENTS' });
+    if (!scanRes || !scanRes.success || !scanRes.data) {
+      throw new Error(scanRes?.error?.message || 'Could not scan page elements.');
+    }
+    const actionMap = scanRes.data;
+
+    // Show numbered badges
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'SHOW_BADGES' });
+    } catch (bErr) {}
+
+    // 2. Think / query model
+    await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.THINKING, {
+      statusMessage: `Step ${stepCount}/${maxSteps}: Analyzing next action…`
+    });
+
+    const prefs = await chrome.storage.local.get('sahayak_preferences');
+    const lang = prefs.sahayak_preferences?.language || 'en';
+
+    // Prepare history
+    let previousActions = [...state.history];
+    if (skipNote) {
+      previousActions.push({
+        step: stepCount,
+        action: { action: 'skip', reasoning: skipNote },
+        decision: 'skipped'
+      });
+    }
+
+    const { systemPrompt, userPrompt } = PromptBuilder.buildAgentActionPrompt(
+      goal,
+      actionMap,
+      previousActions,
+      null, // userProfile injected in Slice 4.1
+      lang
+    );
+
+    const responseSchema = {
+      type: 'OBJECT',
+      properties: {
+        action: {
+          type: 'STRING',
+          enum: ['click', 'type', 'select', 'scroll', 'done']
+        },
+        targetElementId: { type: 'INTEGER' },
+        value: { type: 'STRING' },
+        reasoning: { type: 'STRING' },
+        isConsequential: { type: 'BOOLEAN' }
+      },
+      required: ['action', 'reasoning', 'isConsequential']
+    };
+
+    const aiRes = await ModelGateway.queryAI({
+      prompt: userPrompt,
+      systemPrompt,
+      task: 'text',
+      temperature: 0.1,
+      maxTokens: 512,
+      responseMimeType: 'application/json',
+      responseSchema
+    });
+
+    // Parse JSON
+    let parsed = null;
+    const cleanJson = (aiRes.text || '').trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch (e) {
+      const match = cleanJson.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { parsed = JSON.parse(match[0]); } catch (e2) {}
+      }
+    }
+
+    if (!parsed || !parsed.action) {
+      throw new Error('AI model proposed an unreadable action structure.');
+    }
+
+    // 3. Safety Check
+    await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.SAFETY_CHECK, {
+      statusMessage: `Step ${stepCount}/${maxSteps}: Checking safety rails…`
+    });
+
+    const targetEl = parsed.targetElementId ? actionMap.elements.find((e) => e.id === parsed.targetElementId) : null;
+    const isConsequential = checkIsConsequential(targetEl, parsed);
+    parsed.isConsequential = isConsequential;
+
+    // Highlight proposed element
+    if (parsed.targetElementId) {
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: 'HIGHLIGHT_ELEMENT', elementId: parsed.targetElementId });
+      } catch (hlErr) {}
+    }
+
+    // 4. Awaiting Approval
+    const nextState = await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.AWAITING_APPROVAL, {
+      currentAction: parsed,
+      statusMessage: `Step ${stepCount}/${maxSteps}: Awaiting your approval.`
+    });
+
+    return { success: true, data: nextState };
+
+  } catch (err) {
+    console.error('[Sahayak] Agent step error:', err);
+    await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.CLEANUP, {
+      error: err.message,
+      statusMessage: `Agent stopped due to error: ${err.message}`
+    });
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'CLEAR_BADGES' });
+    } catch (e) {}
+    return { success: false, error: { code: 'AGENT_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Handle user approval of the proposed action.
+ */
+async function handleAgentApprove(payload = {}) {
+  const state = AgentStateMachine.getState();
+  if (state.state !== AgentStateMachine.AgentState.AWAITING_APPROVAL) {
+    return { success: false, error: { code: 'INVALID_STATE', message: 'No action currently awaiting approval.' } };
+  }
+
+  const action = state.currentAction;
+  const stepIndex = state.stepCount;
+
+  // Record approval in history
+  const history = [
+    ...state.history,
+    {
+      step: stepIndex,
+      action,
+      decision: 'approved',
+      timestamp: Date.now()
+    }
+  ];
+
+  // If action is done, finish task
+  if (action?.action === 'done') {
+    await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.COMPLETED, {
+      history,
+      statusMessage: '✓ Goal completed successfully!',
+      currentAction: action
+    });
+    try {
+      await chrome.tabs.sendMessage(state.tabId, { type: 'CLEAR_BADGES' });
+    } catch (e) {}
+    return { success: true, data: AgentStateMachine.getState() };
+  }
+
+  // Transition to EXECUTING
+  await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.EXECUTING, {
+    history,
+    stepCount: stepIndex + 1,
+    statusMessage: `Step ${stepIndex}: Action approved. Preparing next step…`
+  });
+
+  // Note for Slice 3.4: Synthetic executor is implemented in Slice 3.5.
+  // In Slice 3.4, approval records the action and advances the loop to the next step.
+  return await runAgentStep();
+}
+
+/**
+ * Handle user skipping the proposed action.
+ */
+async function handleAgentSkip(payload = {}) {
+  const state = AgentStateMachine.getState();
+  if (state.state !== AgentStateMachine.AgentState.AWAITING_APPROVAL) {
+    return { success: false, error: { code: 'INVALID_STATE', message: 'No action currently awaiting approval.' } };
+  }
+
+  const action = state.currentAction;
+  const stepIndex = state.stepCount;
+
+  // Record skip in history
+  const history = [
+    ...state.history,
+    {
+      step: stepIndex,
+      action,
+      decision: 'skipped',
+      timestamp: Date.now()
+    }
+  ];
+
+  await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.THINKING, {
+    history,
+    stepCount: stepIndex + 1,
+    statusMessage: `Step ${stepIndex} skipped. Re-querying AI for an alternate action…`
+  });
+
+  return await runAgentStep(`User skipped element #${action?.targetElementId || ''} (${action?.action}). Propose a different action.`);
+}
+
+/**
+ * Handle user emergency stop (kill switch §12.6).
+ */
+async function handleAgentStop() {
+  const state = AgentStateMachine.getState();
+  const tabId = state.tabId;
+
+  await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.CLEANUP, {
+    statusMessage: 'Task stopped by user.',
+    currentAction: null
+  });
+
+  if (tabId) {
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'CLEAR_BADGES' });
+    } catch (e) {}
+  }
+
+  await AgentStateMachine.reset();
+  return { success: true, data: AgentStateMachine.getState() };
 }
 
 /**
