@@ -558,3 +558,4 @@ const ScreenshotView = (() => {
 
 // Export globally
 globalThis.ScreenshotView = ScreenshotView;
+
