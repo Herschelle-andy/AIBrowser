@@ -399,7 +399,8 @@
 
         if (response.success) {
           resultText.textContent = response.data.text;
-          modelBadge.textContent = `⚡ ${response.data.model}`;
+          const backupBadge = response.data.isFallback ? ' · 🔄 Backup model' : '';
+          modelBadge.textContent = `⚡ ${response.data.model}${backupBadge}`;
           if (response.data.isTruncated && truncationNotice) {
             truncationNotice.style.display = 'flex';
           }

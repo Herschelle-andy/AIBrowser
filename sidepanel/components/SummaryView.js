@@ -433,8 +433,9 @@ const SummaryView = (() => {
     // Format Markdown into beautiful styled HTML sections
     outputEl.innerHTML = parseSummaryMarkdown(data.summary, isVideo);
 
-    // Model badge
-    modelBadge.textContent = `⚡ ${data.model || 'Gemini'}`;
+    // Model badge (Edge case 2.4.5: Indicate fallback model if active)
+    const backupText = data.isFallback ? ' · 🔄 Backup model' : '';
+    modelBadge.textContent = `⚡ ${data.model || 'Gemini'}${backupText}`;
 
     resultContainer.style.display = 'block';
     resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });

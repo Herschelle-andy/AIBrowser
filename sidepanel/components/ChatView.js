@@ -239,7 +239,7 @@ const ChatView = (() => {
       case 'STREAM_DONE': {
         const fullText = msg.fullText || _currentStreamingText;
         const model = msg.model || 'Gemini';
-        completeStreaming(fullText, model, msg.lowContent);
+        completeStreaming(fullText, model, msg.lowContent, msg.isFallback);
         break;
       }
 
@@ -340,7 +340,7 @@ const ChatView = (() => {
   /**
    * Complete stream and persist.
    */
-  function completeStreaming(fullText, model, lowContent) {
+  function completeStreaming(fullText, model, lowContent, isFallback = false) {
     if (!_isStreaming) return;
 
     if (_activeStreamingBubble) {
@@ -353,7 +353,8 @@ const ChatView = (() => {
       if (bodyEl && !bodyEl.querySelector('.model-badge')) {
         const badge = document.createElement('div');
         badge.className = 'model-badge';
-        badge.textContent = `⚡ ${model}`;
+        const backupBadge = isFallback ? ' · 🔄 Backup model' : '';
+        badge.textContent = `⚡ ${model}${backupBadge}`;
         bodyEl.appendChild(badge);
       }
     }

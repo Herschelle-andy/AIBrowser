@@ -13,6 +13,8 @@
 // Absolute extension paths ensure reliable resolution across contexts.
 importScripts(
   '/services/ai/geminiProvider.js',
+  '/services/ai/groqProvider.js',
+  '/services/ai/retryWithFallback.js',
   '/services/ai/modelGateway.js',
   '/services/ai/promptBuilder.js',
   '/background/contextMenus.js',
@@ -223,6 +225,8 @@ async function handleMessage(message, sender) {
         data: {
           text: result.text,
           model: result.model,
+          provider: result.provider,
+          isFallback: result.isFallback,
           action,
           isTruncated
         }
@@ -259,7 +263,15 @@ async function handleMessage(message, sender) {
         maxTokens: 1024,
       });
 
-      return { success: true, data: { text: result.text, model: result.model } };
+      return {
+        success: true,
+        data: {
+          text: result.text,
+          model: result.model,
+          provider: result.provider,
+          isFallback: result.isFallback
+        }
+      };
     }
 
     // ── Article Extraction & Summary (Slice 1.3) ─────────────
@@ -559,6 +571,7 @@ async function handleSummarizePage(payload = {}) {
       summary: aiResult.text,
       model: aiResult.model,
       provider: aiResult.provider,
+      isFallback: aiResult.isFallback,
       article: {
         title: article.title,
         byline: article.byline,
@@ -735,6 +748,7 @@ async function handleSummarizeYouTube(payload = {}) {
       summary: aiResult.text,
       model: aiResult.model,
       provider: aiResult.provider,
+      isFallback: aiResult.isFallback,
       video: {
         videoId: videoData.videoId || extractVideoId(initialUrl),
         title: videoData.title || tab.title,
@@ -936,6 +950,7 @@ async function handleChatStreamQuery(msg, port, signal) {
       fullText: aiResult.text,
       model: aiResult.model,
       provider: aiResult.provider,
+      isFallback: aiResult.isFallback,
       lowContent: isLowContent
     });
   } catch (err) {
