@@ -376,6 +376,11 @@ async function handleMessage(message, sender) {
       }
     }
 
+    // ── Interactive Element Scanner (Slice 3.1) ──────────────
+    case 'SCAN_ELEMENTS': {
+      return await handleScanElements(message.payload || {});
+    }
+
     // ── Health Check ─────────────────────────────────────────
     case 'PING': {
       return { success: true, data: { alive: true, timestamp: Date.now() } };
@@ -398,7 +403,15 @@ async function handleMessage(message, sender) {
 async function ensureContentScriptInjected(tabId) {
   try {
     const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (ping && ping.alive) return true;
+    if (ping && ping.alive) {
+      if (!ping.hasScanner) {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content/scanner.js']
+        });
+      }
+      return true;
+    }
   } catch (e) {
     // Content script not listening in this tab yet; proceed to inject
   }
@@ -410,6 +423,7 @@ async function ensureContentScriptInjected(tabId) {
         'content/lib/Readability.js',
         'content/reader.js',
         'content/youtube.js',
+        'content/scanner.js',
         'content/index.js'
       ]
     });
@@ -419,6 +433,40 @@ async function ensureContentScriptInjected(tabId) {
   } catch (err) {
     console.error('[Sahayak] Script injection failed:', err);
     throw err;
+  }
+}
+
+/**
+ * Handle interactive element scanning on the active tab (Slice 3.1).
+ */
+async function handleScanElements(payload = {}) {
+  let tabId = payload.tabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) {
+      return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
+    }
+    if (isRestrictedUrl(tab.url)) {
+      return {
+        success: false,
+        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot scan system or internal browser pages.' }
+      };
+    }
+    tabId = tab.id;
+  }
+
+  try {
+    await ensureContentScriptInjected(tabId);
+    return await chrome.tabs.sendMessage(tabId, { type: 'SCAN_ELEMENTS' });
+  } catch (err) {
+    console.error('[Sahayak] Scan communication error:', err);
+    return {
+      success: false,
+      error: {
+        code: 'SCAN_FAILED',
+        message: err.message || 'Could not communicate with the page. Please refresh the page and try again.'
+      }
+    };
   }
 }
 

@@ -27,6 +27,7 @@
         "content/lib/Readability.js",
         "content/reader.js",
         "content/youtube.js",
+        "content/scanner.js",
         "content/index.js"
       ],
       "run_at": "document_idle"

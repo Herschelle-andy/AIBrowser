@@ -23,10 +23,39 @@
         sendResponse({
           success: true,
           alive: true,
+          hasScanner: Boolean(globalThis.SahayakScanner),
           url: window.location.href,
           title: document.title
         });
         break;
+      }
+
+      case 'SCAN_ELEMENTS': {
+        const scanner = globalThis.SahayakScanner || (typeof SahayakScanner !== 'undefined' ? SahayakScanner : null);
+        if (!scanner) {
+          sendResponse({
+            success: false,
+            code: 'SCANNER_MISSING',
+            error: 'Scanner module is not initialized on this page.'
+          });
+          return true;
+        }
+
+        try {
+          const actionMap = scanner.scan();
+          sendResponse({
+            success: true,
+            data: actionMap
+          });
+        } catch (err) {
+          console.error('[Sahayak] Element scan error:', err);
+          sendResponse({
+            success: false,
+            code: 'SCAN_FAILED',
+            error: err.message || 'Failed to scan elements.'
+          });
+        }
+        return true;
       }
 
       case 'EXTRACT_ARTICLE': {
