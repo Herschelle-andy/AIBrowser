@@ -404,6 +404,67 @@
     }
   }
 
+  /**
+   * Build prompt for "Find It For Me" (Slice 3.3).
+   * Locates the best matching interactive element on the page for a natural language request.
+   *
+   * @param {string} query - Natural language search query (e.g. "Where do I upload my resume?")
+   * @param {Object} actionMap - PageActionMap containing page metadata and elements
+   * @param {string} [language='en'] - 'en' | 'hi-en'
+   * @returns {{ systemPrompt: string, userPrompt: string }}
+   */
+  function buildFindElementPrompt(query, actionMap, language = 'en') {
+    const langRule = getLanguageInstruction(language);
+
+    const systemPrompt = [
+      'You are Sahayak Element Locator, an intelligent browser assistant that finds specific interactive elements on web pages.',
+      langRule,
+      'Given the user request and the list of available interactive elements on the page, find the ONE element that most accurately matches the user intent.',
+      'If a matching element exists, return found: true, its numeric elementId, and concise reasoning explaining why it matches.',
+      'If NO element on the page matches the request, return found: false, elementId: 0, and reasoning explaining that no matching element was found.',
+      'You MUST return valid JSON adhering strictly to the schema.'
+    ].join(' ');
+
+    const elementsList = (actionMap.elements || []).map((el) => {
+      const parts = [`#${el.id}: <${el.tag.toLowerCase()}`];
+      if (el.type) parts.push(`type="${el.type}"`);
+      if (el.name) parts.push(`name="${el.name}"`);
+      if (el.role) parts.push(`role="${el.role}"`);
+      parts.push(`>`);
+      if (el.text) parts.push(`text="${el.text}"`);
+      if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`);
+      if (el.value) parts.push(`value="${el.value}"`);
+      if (el.href) parts.push(`href="${el.href}"`);
+      return parts.join(' ');
+    }).join('\n');
+
+    const userPrompt = [
+      `Page Title: ${actionMap.title || 'Untitled'}`,
+      `Page URL: ${actionMap.url || 'Unknown'}`,
+      `Total Elements Scanned: ${actionMap.totalElements || (actionMap.elements ? actionMap.elements.length : 0)}`,
+      '',
+      `User Request: "${query}"`,
+      '',
+      'Available Interactive Elements on this page:',
+      '--- BEGIN ELEMENTS ---',
+      elementsList || '(No interactive elements found on this page)',
+      '--- END ELEMENTS ---',
+      '',
+      'Instructions:',
+      '1. Review the Available Interactive Elements above.',
+      '2. Select the element ID that best fulfills the User Request (e.g., search box, upload button, login link, submit button, etc.).',
+      '3. If no element on this page reasonably matches the request, set found to false and elementId to 0.',
+      '4. Respond with valid JSON in this exact structure:',
+      '{',
+      '  "found": true | false,',
+      '  "elementId": <number>,',
+      '  "reasoning": "<concise explanation>"',
+      '}'
+    ].join('\n');
+
+    return { systemPrompt, userPrompt };
+  }
+
   // Export
   globalThis.PromptBuilder = {
     getLanguageInstruction,
@@ -414,6 +475,7 @@
     buildTranslatePrompt,
     buildDraftReplyPrompt,
     buildContextActionPrompt,
+    buildFindElementPrompt,
     chunkAndSelectContext,
     formatConversationHistory
   };

@@ -189,6 +189,9 @@
     maxTokens = 2048,
     videoUrl = null,
     inlineData = null,
+    responseMimeType = null,
+    responseSchema = null,
+    jsonMode = false,
   }) {
     await throttleGateway();
 
@@ -220,7 +223,7 @@
         systemPrompt,
         temperature,
         maxOutputTokens: maxTokens,
-        jsonMode: task === 'reasoning',
+        jsonMode: jsonMode || (responseMimeType === 'application/json') || task === 'reasoning',
       });
       return {
         text: groqRes.text,
@@ -248,6 +251,8 @@
             maxOutputTokens: maxTokens,
             videoUrl,
             inlineData,
+            responseMimeType,
+            responseSchema,
           });
 
           _discoveredWorkingModel = model;
@@ -283,6 +288,8 @@
                 maxOutputTokens: maxTokens,
                 videoUrl,
                 inlineData,
+                responseMimeType,
+                responseSchema,
               });
 
               _discoveredWorkingModel = modelId;
@@ -314,7 +321,7 @@
           systemPrompt,
           temperature,
           maxOutputTokens: maxTokens,
-          jsonMode: task === 'reasoning',
+          jsonMode: jsonMode || (responseMimeType === 'application/json') || task === 'reasoning',
         });
 
         return {

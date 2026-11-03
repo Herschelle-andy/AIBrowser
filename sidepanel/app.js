@@ -58,6 +58,12 @@
       ScreenshotView.render(screenshotViewContainer);
     }
 
+    // Render the agent view (Slice 3.3)
+    const agentViewContainer = document.getElementById('agent-view-container');
+    if (agentViewContainer && window.AgentView) {
+      AgentView.render(agentViewContainer);
+    }
+
     // Refresh active tab info when switching or updating tabs
     if (chrome.tabs && chrome.tabs.onActivated) {
       chrome.tabs.onActivated.addListener(() => {

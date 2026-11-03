@@ -51,6 +51,8 @@ async function callGemini(apiKey, model, prompt, options = {}) {
     timeoutMs = REQUEST_TIMEOUT_MS,
     videoUrl = null,
     inlineData = null,
+    responseMimeType = null,
+    responseSchema = null,
   } = options;
 
   // Build request parts (multimodal: image + text / video + text)
@@ -86,6 +88,8 @@ async function callGemini(apiKey, model, prompt, options = {}) {
     generationConfig: {
       temperature,
       maxOutputTokens,
+      ...(responseMimeType ? { responseMimeType } : {}),
+      ...(responseSchema ? { responseSchema } : {}),
     }
   };
 
@@ -330,6 +334,8 @@ async function streamGemini(apiKey, model, prompt, options = {}, onChunk = null)
     generationConfig: {
       temperature,
       maxOutputTokens,
+      ...(responseMimeType ? { responseMimeType } : {}),
+      ...(responseSchema ? { responseSchema } : {}),
     }
   };
 

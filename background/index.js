@@ -381,6 +381,11 @@ async function handleMessage(message, sender) {
       return await handleScanElements(message.payload || {});
     }
 
+    // ── Find Element (Slice 3.3) ─────────────────────────────
+    case 'FIND_ELEMENT': {
+      return await handleFindElement(message.payload || message || {});
+    }
+
     // ── Numbered Badges & Overlay (Slice 3.2) ─────────────────
     case 'SHOW_BADGES': {
       return await handleForwardToTab(message);
@@ -520,6 +525,193 @@ async function handleScanElements(payload = {}) {
       }
     };
   }
+}
+
+/**
+ * Handles finding a matching interactive element on the page based on natural language query (Slice 3.3).
+ * Scans the page, calls AI structured output, highlights the matched element, and returns result.
+ *
+ * @param {Object} payload
+ * @param {string} payload.query
+ * @param {string} [payload.language]
+ * @param {number} [payload.tabId]
+ * @returns {Promise<Object>}
+ */
+async function handleFindElement(payload = {}) {
+  const query = (payload.query || '').trim();
+  if (!query) {
+    return {
+      success: false,
+      error: { code: 'EMPTY_QUERY', message: 'Please enter what you are looking for on the page.' }
+    };
+  }
+
+  let tabId = payload.tabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) {
+      return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
+    }
+    if (isRestrictedUrl(tab.url)) {
+      return {
+        success: false,
+        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
+      };
+    }
+    tabId = tab.id;
+  }
+
+  // 1. Ensure scripts are injected
+  await ensureContentScriptInjected(tabId);
+
+  // 2. Scan elements on the page
+  let scanRes;
+  try {
+    scanRes = await chrome.tabs.sendMessage(tabId, { type: 'SCAN_ELEMENTS' });
+  } catch (err) {
+    console.error('[Sahayak] Scan error during find element:', err);
+    return {
+      success: false,
+      error: { code: 'SCAN_FAILED', message: 'Could not scan the page. Please refresh the page and try again.' }
+    };
+  }
+
+  if (!scanRes || !scanRes.success || !scanRes.data) {
+    return {
+      success: false,
+      error: { code: 'SCAN_FAILED', message: scanRes?.error?.message || 'Could not scan page elements.' }
+    };
+  }
+
+  const actionMap = scanRes.data;
+  if (!actionMap.elements || actionMap.elements.length === 0) {
+    return {
+      success: true,
+      data: {
+        found: false,
+        elementId: null,
+        reasoning: 'No interactive elements were found on this page.'
+      }
+    };
+  }
+
+  // 3. Show badges so user has visual reference
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_BADGES' });
+  } catch (e) {
+    // Non-fatal if badge overlay encounters transient issue
+  }
+
+  // 4. Resolve output language
+  let lang = payload.language;
+  if (!lang) {
+    const prefs = await chrome.storage.local.get('sahayak_preferences');
+    lang = prefs.sahayak_preferences?.language || 'en';
+  }
+
+  // 5. Build prompt
+  const { systemPrompt, userPrompt } = PromptBuilder.buildFindElementPrompt(query, actionMap, lang);
+
+  // 6. Gemini structured output schema
+  const responseSchema = {
+    type: 'OBJECT',
+    properties: {
+      found: {
+        type: 'BOOLEAN',
+        description: 'True if an element on the page matches the user request, false if no matching element exists.'
+      },
+      elementId: {
+        type: 'INTEGER',
+        description: 'The numeric ID of the matching element from the provided elements list. If found is false, set to 0.'
+      },
+      reasoning: {
+        type: 'STRING',
+        description: 'Brief explanation of why this element was selected or why no match was found.'
+      }
+    },
+    required: ['found', 'elementId', 'reasoning']
+  };
+
+  // 7. Query Model Gateway
+  let aiResult;
+  try {
+    aiResult = await ModelGateway.queryAI({
+      prompt: userPrompt,
+      systemPrompt,
+      task: 'text',
+      temperature: 0.1,
+      maxTokens: 512,
+      responseMimeType: 'application/json',
+      responseSchema
+    });
+  } catch (err) {
+    console.error('[Sahayak] Model query failed in FIND_ELEMENT:', err);
+    return {
+      success: false,
+      error: { code: err.code || 'AI_ERROR', message: err.message || 'AI request failed.' }
+    };
+  }
+
+  // 8. Parse JSON response
+  let parsed = null;
+  const rawText = aiResult.text || '';
+  const cleanJson = rawText.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+  try {
+    parsed = JSON.parse(cleanJson);
+  } catch (e) {
+    const match = cleanJson.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch (e2) {}
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      success: false,
+      error: { code: 'PARSE_ERROR', message: 'Could not parse element search result.' }
+    };
+  }
+
+  // 9. If element matched, send HIGHLIGHT_ELEMENT and return result
+  const matchedId = Number(parsed.elementId);
+  const found = Boolean(parsed.found && matchedId > 0);
+
+  if (found) {
+    const matchedElement = actionMap.elements.find((el) => el.id === matchedId);
+    if (matchedElement) {
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: 'HIGHLIGHT_ELEMENT', elementId: matchedId });
+      } catch (hlErr) {
+        console.warn('[Sahayak] Could not send HIGHLIGHT_ELEMENT:', hlErr);
+      }
+
+      return {
+        success: true,
+        data: {
+          found: true,
+          elementId: matchedId,
+          element: matchedElement,
+          reasoning: parsed.reasoning || `Matched element #${matchedId}.`,
+          model: aiResult.model,
+          provider: aiResult.provider
+        }
+      };
+    }
+  }
+
+  // If not found or elementId wasn't in actionMap
+  return {
+    success: true,
+    data: {
+      found: false,
+      elementId: null,
+      reasoning: parsed.reasoning || 'Could not find a matching element on this page.',
+      model: aiResult.model,
+      provider: aiResult.provider
+    }
+  };
 }
 
 /**
