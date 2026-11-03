@@ -408,7 +408,7 @@ async function handleMessage(message, sender) {
       return { success: true, data: AgentStateMachine.getState() };
     }
 
-    // ── Numbered Badges & Overlay (Slice 3.2) ─────────────────
+    // ── Numbered Badges, Overlay & Action Executor (Slices 3.2, 3.5) ─
     case 'SHOW_BADGES': {
       return await handleForwardToTab(message);
     }
@@ -418,6 +418,10 @@ async function handleMessage(message, sender) {
     }
 
     case 'HIGHLIGHT_ELEMENT': {
+      return await handleForwardToTab(message);
+    }
+
+    case 'EXECUTE_ACTION': {
       return await handleForwardToTab(message);
     }
 
@@ -447,6 +451,7 @@ async function ensureContentScriptInjected(tabId) {
       const toInject = [];
       if (!ping.hasScanner) toInject.push('content/scanner.js');
       if (!ping.hasOverlay) toInject.push('content/overlay.js');
+      if (!ping.hasExecutor) toInject.push('content/executor.js');
       if (toInject.length > 0) {
         await chrome.scripting.executeScript({
           target: { tabId },
@@ -468,6 +473,7 @@ async function ensureContentScriptInjected(tabId) {
         'content/youtube.js',
         'content/scanner.js',
         'content/overlay.js',
+        'content/executor.js',
         'content/index.js'
       ]
     });
@@ -984,15 +990,49 @@ async function handleAgentApprove(payload = {}) {
     return { success: true, data: AgentStateMachine.getState() };
   }
 
-  // Transition to EXECUTING
+  // Transition to EXECUTING (Slice 3.5)
   await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.EXECUTING, {
     history,
     stepCount: stepIndex + 1,
-    statusMessage: `Step ${stepIndex}: Action approved. Preparing next step…`
+    statusMessage: state.dryRun
+      ? `Step ${stepIndex}: [Dry Run] Simulating ${action?.action}…`
+      : `Step ${stepIndex}: Executing ${action?.action}…`
   });
 
-  // Note for Slice 3.4: Synthetic executor is implemented in Slice 3.5.
-  // In Slice 3.4, approval records the action and advances the loop to the next step.
+  // Execute synthetic action if not dry run
+  if (!state.dryRun && action) {
+    try {
+      await ensureContentScriptInjected(state.tabId);
+      const execRes = await chrome.tabs.sendMessage(state.tabId, {
+        type: 'EXECUTE_ACTION',
+        payload: { action }
+      });
+
+      if (!execRes || !execRes.success) {
+        const errorMsg = execRes?.error || execRes?.code || 'Execution failed on page.';
+        throw new Error(errorMsg);
+      }
+    } catch (err) {
+      console.error('[Sahayak] Execution error during step:', err);
+      await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.CLEANUP, {
+        error: err.message,
+        statusMessage: `Execution failed at step ${stepIndex}: ${err.message}`
+      });
+      try {
+        await chrome.tabs.sendMessage(state.tabId, { type: 'CLEAR_BADGES' });
+      } catch (e) {}
+      return {
+        success: false,
+        error: { code: 'EXECUTION_FAILED', message: err.message }
+      };
+    }
+  }
+
+  // Settle delay: give DOM time to update after action
+  const settleDelay = state.dryRun ? 200 : 400;
+  await new Promise((resolve) => setTimeout(resolve, settleDelay));
+
+  // Advance loop: re-scan and propose next action
   return await runAgentStep();
 }
 

@@ -29,6 +29,7 @@
         "content/youtube.js",
         "content/scanner.js",
         "content/overlay.js",
+        "content/executor.js",
         "content/index.js"
       ],
       "run_at": "document_idle"

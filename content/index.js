@@ -25,6 +25,7 @@
           alive: true,
           hasScanner: Boolean(globalThis.SahayakScanner),
           hasOverlay: Boolean(globalThis.SahayakOverlay),
+          hasExecutor: Boolean(globalThis.SahayakExecutor),
           url: window.location.href,
           title: document.title
         });
@@ -133,6 +134,35 @@
             success: false,
             code: 'HIGHLIGHT_FAILED',
             error: err.message || 'Failed to highlight element.'
+          });
+        }
+        return true;
+      }
+
+      case 'EXECUTE_ACTION': {
+        const executor = globalThis.SahayakExecutor || (typeof SahayakExecutor !== 'undefined' ? SahayakExecutor : null);
+        if (!executor) {
+          sendResponse({
+            success: false,
+            code: 'EXECUTOR_MISSING',
+            error: 'Executor module is not initialized on this page.'
+          });
+          return true;
+        }
+
+        try {
+          const action = message.payload?.action || message.action;
+          const result = executor.execute(action);
+          sendResponse({
+            success: true,
+            data: result
+          });
+        } catch (err) {
+          console.error('[Sahayak] Action execution error:', err);
+          sendResponse({
+            success: false,
+            code: 'EXECUTION_FAILED',
+            error: err.message || 'Failed to execute action.'
           });
         }
         return true;
