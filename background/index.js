@@ -175,7 +175,7 @@ async function handleMessage(message, sender) {
 
     // ── Tab Info ─────────────────────────────────────────────
     case 'GET_ACTIVE_TAB_INFO': {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await getActiveTab();
       if (!tab) {
         return { success: false, error: { code: 'NO_TAB', message: 'No active tab found.' } };
       }
@@ -453,6 +453,29 @@ async function handleMessage(message, sender) {
 // ── Helpers & Action Handlers ──────────────────────────────────────────
 
 /**
+ * Helper to reliably resolve the active browser tab across windows and side panels.
+ * Tries lastFocusedWindow, then currentWindow, then any active tab.
+ */
+async function getActiveTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab && tab.id) return tab;
+  } catch (e) {}
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id) return tab;
+  } catch (e) {}
+
+  try {
+    const tabs = await chrome.tabs.query({ active: true });
+    if (tabs && tabs.length > 0) return tabs[0];
+  } catch (e) {}
+
+  return null;
+}
+
+/**
  * Ensures the content script and Readability library are active in the target tab.
  * Injects dynamically if the tab was opened before extension was loaded.
  */
@@ -499,13 +522,13 @@ async function ensureContentScriptInjected(tabId) {
 }
 
 /**
- * Forwards an overlay or content message (SHOW_BADGES, CLEAR_BADGES, HIGHLIGHT_ELEMENT)
+ * Forwards an overlay or content message (SHOW_BADGES, CLEAR_BADGES, HIGHLIGHT_ELEMENT, EXECUTE_ACTION)
  * to the active tab, ensuring content scripts are injected.
  */
 async function handleForwardToTab(message) {
   let tabId = message.payload?.tabId || message.tabId;
   if (!tabId) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
@@ -539,7 +562,7 @@ async function handleForwardToTab(message) {
 async function handleScanElements(payload = {}) {
   let tabId = payload.tabId;
   if (!tabId) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
@@ -588,7 +611,7 @@ async function handleFindElement(payload = {}) {
 
   let tabId = payload.tabId;
   if (!tabId) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
@@ -598,6 +621,8 @@ async function handleFindElement(payload = {}) {
         error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
       };
     }
+    tabId = tab.id;
+  }
     tabId = tab.id;
   }
 
@@ -850,7 +875,7 @@ async function handleAgentStart(payload = {}) {
 
   let tabId = payload.tabId;
   if (!tabId) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
@@ -1214,15 +1239,11 @@ async function handleAgentStop() {
   return { success: true, data: AgentStateMachine.getState() };
 }
 
-  await AgentStateMachine.reset();
-  return { success: true, data: AgentStateMachine.getState() };
-}
-
 /**
  * Handle article extraction only (without running AI summary).
  */
 async function handleExtractArticle() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = await getActiveTab();
   if (!tab || !tab.id) {
     return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
   }
@@ -1253,7 +1274,7 @@ async function handleExtractArticle() {
  * Handle full page summarisation: extract -> prompt -> AI -> structured summary.
  */
 async function handleSummarizePage(payload = {}) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = await getActiveTab();
   if (!tab || !tab.id) {
     return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
   }

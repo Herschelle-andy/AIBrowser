@@ -341,11 +341,25 @@
       qualifyingSet.add(el);
     }
 
+    // Prioritize form controls, buttons, and summary elements ahead of generic links (§10.2)
+    qualifyingElements.sort((a, b) => {
+      const isControlA = ['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].includes(a.tagName);
+      const isControlB = ['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].includes(b.tagName);
+      if (isControlA && !isControlB) return -1;
+      if (!isControlA && isControlB) return 1;
+      return 0;
+    });
+
     // Second pass: remove redundant child elements and build schema items
     const elements = [];
     let badgeId = 1;
+    const MAX_SCANNED_ELEMENTS = 250;
 
     for (const el of qualifyingElements) {
+      if (elements.length >= MAX_SCANNED_ELEMENTS) {
+        break;
+      }
+
       if (isRedundantChild(el, qualifyingSet)) {
         continue;
       }

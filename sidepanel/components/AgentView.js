@@ -256,14 +256,20 @@
         showStatus('Scanning and displaying badges…');
         try {
           const scanRes = await chrome.runtime.sendMessage({ type: 'SCAN_ELEMENTS' });
-          if (scanRes && scanRes.success && scanRes.data) {
+          if (!scanRes || !scanRes.success) {
+            const errMsg = scanRes?.error?.message || (typeof scanRes?.error === 'string' ? scanRes.error : '') || 'Scan failed.';
+            showStatus(errMsg, 'error');
+            return;
+          }
+          if (scanRes.data) {
             updateElementCount(scanRes.data.totalElements);
           }
           const badgeRes = await chrome.runtime.sendMessage({ type: 'SHOW_BADGES' });
           if (badgeRes && badgeRes.success) {
             showStatus(`✓ Numbered badges displayed (${badgeRes.count || 0} elements).`, 'success');
           } else {
-            showStatus(badgeRes?.error?.message || 'Could not show badges.', 'error');
+            const errMsg = badgeRes?.error?.message || (typeof badgeRes?.error === 'string' ? badgeRes.error : '') || 'Could not show badges.';
+            showStatus(errMsg, 'error');
           }
         } catch (err) {
           showStatus(err.message || 'Failed to communicate with page.', 'error');
@@ -274,8 +280,13 @@
     if (btnClearBadges) {
       btnClearBadges.addEventListener('click', async () => {
         try {
-          await chrome.runtime.sendMessage({ type: 'CLEAR_BADGES' });
-          showStatus('✓ Badges cleared.', 'info');
+          const res = await chrome.runtime.sendMessage({ type: 'CLEAR_BADGES' });
+          if (res && res.success) {
+            showStatus('✓ Badges cleared.', 'info');
+          } else {
+            const errMsg = res?.error?.message || (typeof res?.error === 'string' ? res.error : '') || 'Could not clear badges.';
+            showStatus(errMsg, 'error');
+          }
         } catch (err) {
           showStatus(err.message || 'Could not clear badges.', 'error');
         }
@@ -291,7 +302,8 @@
             updateElementCount(res.data.totalElements);
             showStatus(`✓ Found ${res.data.totalElements} interactive elements.`, 'success');
           } else {
-            showStatus(res?.error?.message || 'Scan failed.', 'error');
+            const errMsg = res?.error?.message || (typeof res?.error === 'string' ? res.error : '') || 'Scan failed.';
+            showStatus(errMsg, 'error');
           }
         } catch (err) {
           showStatus(err.message || 'Could not scan page.', 'error');
@@ -421,7 +433,8 @@
       });
 
       if (!res || !res.success) {
-        showAgentCompletion(false, res?.error?.message || 'Could not start agent task.');
+        const errMsg = res?.error?.message || (typeof res?.error === 'string' ? res.error : '') || 'Could not start agent task.';
+        showAgentCompletion(false, errMsg);
       } else if (res.data) {
         updateAgentUI(res.data);
       }
@@ -688,7 +701,8 @@
       });
 
       if (!response || !response.success) {
-        showError(response?.error?.message || 'Could not search elements on this page.');
+        const errMsg = response?.error?.message || (typeof response?.error === 'string' ? response.error : '') || 'Could not search elements on this page.';
+        showError(errMsg);
         return;
       }
 

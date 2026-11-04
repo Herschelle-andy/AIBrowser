@@ -9,15 +9,17 @@
 (function () {
   'use strict';
 
-  // Guard against multiple injections
-  if (window.__SAHAYAK_CONTENT_SCRIPT_INITIALIZED__) {
-    return;
+  // Ensure previous listener is cleared if re-injected
+  if (window.__SAHAYAK_MESSAGE_LISTENER__) {
+    try {
+      chrome.runtime.onMessage.removeListener(window.__SAHAYAK_MESSAGE_LISTENER__);
+    } catch (e) {}
   }
   window.__SAHAYAK_CONTENT_SCRIPT_INITIALIZED__ = true;
 
   console.log('[Sahayak] Content script loaded on:', window.location.href);
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const messageListener = (message, sender, sendResponse) => {
     switch (message.type) {
       case 'PING': {
         sendResponse({
@@ -239,6 +241,9 @@
         // Do not handle unknown messages here — allow other handlers or ignore
         break;
     }
-  });
+  };
+
+  window.__SAHAYAK_MESSAGE_LISTENER__ = messageListener;
+  chrome.runtime.onMessage.addListener(messageListener);
 })();
 
