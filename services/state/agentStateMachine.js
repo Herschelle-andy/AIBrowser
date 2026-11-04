@@ -33,9 +33,9 @@
   const VALID_TRANSITIONS = {
     [AgentState.IDLE]: [AgentState.SCANNING],
     [AgentState.SCANNING]: [AgentState.THINKING, AgentState.CLEANUP, AgentState.IDLE],
-    [AgentState.THINKING]: [AgentState.SAFETY_CHECK, AgentState.CLEANUP, AgentState.IDLE],
+    [AgentState.THINKING]: [AgentState.SAFETY_CHECK, AgentState.SCANNING, AgentState.CLEANUP, AgentState.IDLE],
     [AgentState.SAFETY_CHECK]: [AgentState.AWAITING_APPROVAL, AgentState.CLEANUP, AgentState.IDLE],
-    [AgentState.AWAITING_APPROVAL]: [AgentState.EXECUTING, AgentState.THINKING, AgentState.CLEANUP, AgentState.IDLE],
+    [AgentState.AWAITING_APPROVAL]: [AgentState.EXECUTING, AgentState.SCANNING, AgentState.THINKING, AgentState.CLEANUP, AgentState.IDLE],
     [AgentState.EXECUTING]: [AgentState.SCANNING, AgentState.COMPLETED, AgentState.CLEANUP, AgentState.IDLE],
     [AgentState.COMPLETED]: [AgentState.CLEANUP, AgentState.IDLE],
     [AgentState.CLEANUP]: [AgentState.IDLE]
@@ -121,9 +121,10 @@
 
     // Direct transition to CLEANUP or IDLE is always permitted (stop / reset)
     const isStopOrReset = nextState === AgentState.CLEANUP || nextState === AgentState.IDLE;
+    const isSelfTransition = currentState === nextState;
     const allowed = VALID_TRANSITIONS[currentState] || [];
 
-    if (!isStopOrReset && !allowed.includes(nextState)) {
+    if (!isStopOrReset && !isSelfTransition && !allowed.includes(nextState)) {
       throw new Error(`Invalid agent state transition: ${currentState} → ${nextState}`);
     }
 

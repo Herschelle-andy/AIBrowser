@@ -1198,10 +1198,10 @@ async function handleAgentSkip(payload = {}) {
     }
   ];
 
-  await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.THINKING, {
+  await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.SCANNING, {
     history,
     stepCount: stepIndex + 1,
-    statusMessage: `Step ${stepIndex} skipped. Re-querying AI for an alternate action…`
+    statusMessage: `Step ${stepIndex} skipped. Re-scanning page for an alternate action…`
   });
 
   return await runAgentStep(`User skipped element #${action?.targetElementId || ''} (${action?.action}). Propose a different action.`);
