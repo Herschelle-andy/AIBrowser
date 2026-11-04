@@ -134,6 +134,14 @@ global.chrome = {
   assert.strictEqual(Blocklists.isDomainBlocked('https://paypal.com/signin'), true);
   assert.strictEqual(Blocklists.isDomainBlocked('https://example.com/blog/banking-tips'), false);
 
+  // Custom domain blocklist verification
+  Blocklists.setCustomDomains(['mybank.internal', 'confidential.corp']);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://mybank.internal/dashboard'), true);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://sub.confidential.corp/data'), true);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://wikipedia.org'), false);
+  Blocklists.setCustomDomains([]);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://mybank.internal/dashboard'), false);
+
   assert.strictEqual(Blocklists.isFieldBlocked({ type: 'password' }), true);
   assert.strictEqual(Blocklists.isFieldBlocked({ type: 'text', name: 'user_otp' }), true);
   assert.strictEqual(Blocklists.isFieldBlocked({ type: 'text', name: 'fullname' }), false);

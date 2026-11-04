@@ -59,6 +59,11 @@ const ChatView = (() => {
           <span>⚠️ This page has very little text (< 50 words). Answers may be limited; try <strong>Vision / Screenshot</strong> tab for visual content.</span>
         </div>
 
+        <!-- Blocked Domain Notice Banner (Slice 4.3) -->
+        <div id="chat-domain-blocked-banner" class="chat-banner chat-banner-danger" style="display: none;">
+          <span>🛑 <strong>Safety Rails:</strong> Grounded chat is disabled on banking and sensitive payment pages.</span>
+        </div>
+
         <!-- Page Navigated Notice (Edge case 2.1.7) -->
         <div id="chat-navigated-banner" class="chat-banner chat-banner-info" style="display: none;">
           <span>ℹ️ You've navigated to a new page.</span>
@@ -508,6 +513,9 @@ const ChatView = (() => {
 
     const titleEl = _container.querySelector('#chat-header-page-title');
     const domainEl = _container.querySelector('#chat-header-page-domain');
+    const blockedBanner = _container.querySelector('#chat-domain-blocked-banner');
+    const inputEl = _container.querySelector('#chat-input');
+    const sendBtn = _container.querySelector('#btn-send-chat');
 
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
@@ -524,6 +532,16 @@ const ChatView = (() => {
         } catch (e) {
           domainEl.textContent = '';
         }
+
+        const isBlocked = Boolean(tab.isDomainBlocked);
+        if (blockedBanner) blockedBanner.style.display = isBlocked ? 'flex' : 'none';
+        if (inputEl) {
+          inputEl.disabled = isBlocked;
+          inputEl.placeholder = isBlocked
+            ? 'Chat is disabled on sensitive/banking domains'
+            : 'Ask a question about this page...';
+        }
+        if (sendBtn) sendBtn.disabled = isBlocked;
       }
     } catch (err) {
       titleEl.textContent = 'Active page';

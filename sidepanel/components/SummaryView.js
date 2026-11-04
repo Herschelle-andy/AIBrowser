@@ -251,6 +251,15 @@ const SummaryView = (() => {
           btnSummarize.disabled = true;
           btnSummarize.textContent = '⚡ Summarise This Page';
           btnSummarize.title = 'Cannot summarise browser-internal or Web Store pages';
+        } else if (tab.isDomainBlocked) {
+          _isYouTubePage = false;
+          headingEl.textContent = '📄 Page Summary';
+          descEl.textContent = '🛑 This domain is protected by Sahayak Safety Rails. Sensitive financial/personal sites are never transmitted to external AI models.';
+          badgeEl.textContent = '🛑 Blocked Domain';
+          badgeEl.className = 'badge-tag badge-danger';
+          btnSummarize.disabled = true;
+          btnSummarize.textContent = '🛑 Domain Blocked by Safety Rails';
+          btnSummarize.title = 'Sahayak cannot read or send content from sensitive/banking pages';
         } else if (tab.isYouTube) {
           // YouTube Video Mode
           _isYouTubePage = true;

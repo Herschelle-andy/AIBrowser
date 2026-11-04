@@ -26,6 +26,17 @@
     containerEl = container;
     container.innerHTML = `
       <div class="agent-view">
+        <!-- Blocked Domain Warning (Slice 4.3) -->
+        <div id="agent-domain-blocked-alert" class="action-blocked-banner" style="display: none; margin-bottom: 12px;">
+          <div class="blocked-header">
+            <span class="blocked-icon">🛑</span>
+            <strong>Domain Blocked by Safety Rails</strong>
+          </div>
+          <p class="blocked-desc" style="margin-top: 4px;">
+            Browser actions and element scanning are disabled on sensitive banking, payment, and financial pages.
+          </p>
+        </div>
+
         <!-- ── Section: Overlay Controls ────────────────────────────── -->
         <div class="agent-card">
           <div class="agent-card-header">
@@ -229,6 +240,9 @@
       renderActionLog({ history: [], state: 'IDLE', dryRun: false });
     }
 
+    // Check active tab safety rails
+    await checkDomainSafety();
+
     // Register broadcast listener
     if (!isMessageListenerRegistered && chrome.runtime && chrome.runtime.onMessage) {
       chrome.runtime.onMessage.addListener((message) => {
@@ -238,6 +252,41 @@
       });
       isMessageListenerRegistered = true;
     }
+  }
+
+  /**
+   * Check whether current active tab is blocked by safety rails and update UI controls.
+   */
+  async function checkDomainSafety() {
+    if (!containerEl) return;
+    const alertEl = containerEl.querySelector('#agent-domain-blocked-alert');
+    const btnShowBadges = containerEl.querySelector('#btn-show-badges');
+    const btnRescan = containerEl.querySelector('#btn-rescan-page');
+    const btnStart = containerEl.querySelector('#btn-agent-start');
+    const btnFind = containerEl.querySelector('#btn-find-submit');
+
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
+      const isBlocked = Boolean(res?.success && res.data?.isDomainBlocked);
+
+      if (alertEl) alertEl.style.display = isBlocked ? 'block' : 'none';
+      if (btnShowBadges) {
+        btnShowBadges.disabled = isBlocked;
+        if (isBlocked) btnShowBadges.title = 'Disabled on sensitive domains';
+      }
+      if (btnRescan) {
+        btnRescan.disabled = isBlocked;
+        if (isBlocked) btnRescan.title = 'Disabled on sensitive domains';
+      }
+      if (btnStart) {
+        btnStart.disabled = isBlocked;
+        if (isBlocked) btnStart.title = 'Agent automation disabled on sensitive domains';
+      }
+      if (btnFind) {
+        btnFind.disabled = isBlocked;
+        if (isBlocked) btnFind.title = 'Disabled on sensitive domains';
+      }
+    } catch (e) {}
   }
 
   /**
@@ -814,6 +863,7 @@
     updateAgentUI,
     startAgentTask,
     stopAgentTask,
-    executeFindElement
+    executeFindElement,
+    checkDomainSafety
   };
 })();

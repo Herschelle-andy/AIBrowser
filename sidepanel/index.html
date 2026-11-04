@@ -22,15 +22,26 @@
             title="Hinglish output (Hindi written in Roman script)">हिंग्लिश</button>
         </div>
       </div>
-      <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Open settings">
-        ⚙️
-      </button>
+      <div class="header-right">
+        <button id="header-safety-badge" class="header-safety-badge" title="Deterministic Safety Rails: Active">
+          🛡️ Protected
+        </button>
+        <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Open settings">
+          ⚙️
+        </button>
+      </div>
     </header>
 
     <!-- ── API Key Banner (shown when no key is set) ──────── -->
     <div id="api-key-banner" class="banner banner-warning" style="display: none;">
       <span>⚠️ Add your Gemini API key in Settings to get started.</span>
       <button id="banner-settings-btn" class="banner-link">Open Settings</button>
+    </div>
+
+    <!-- ── Domain Blocked Banner (shown when active tab is on blocklist) ── -->
+    <div id="domain-blocked-banner" class="banner banner-danger" style="display: none;">
+      <span>🛑 <strong>Domain Blocked:</strong> Safety rails active. AI page reading and agent actions are disabled on this domain.</span>
+      <button id="banner-safety-settings-btn" class="banner-link">Settings</button>
     </div>
 
     <!-- ── Tab Navigation ─────────────────────────────────── -->

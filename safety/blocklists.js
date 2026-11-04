@@ -3,6 +3,7 @@
  *
  * Deterministic blocklists for high-risk domains, sensitive credential fields,
  * and consequential browser actions.
+ * Supports built-in patterns and user-configured custom blocked domains.
  *
  * Architecture references: §12 (Safety Rails Engine), Edge cases 4.3.1 - 4.3.10
  */
@@ -48,7 +49,7 @@
     /one.?time.?pass/i,
     /verification.?code/i,
     /\bcvv\b/i,
-    /\bcvc\b/i,
+    /cvc/i,
     /security.?code/i,
     /card.?number/i,
     /card.?num/i,
@@ -89,7 +90,69 @@
   ]);
 
   /**
-   * Checks whether a URL is on the blocked domain list.
+   * User-defined custom blocked domains.
+   */
+  let _customDomains = [];
+
+  function getCustomDomains() {
+    return [..._customDomains];
+  }
+
+  function setCustomDomains(domains) {
+    if (Array.isArray(domains)) {
+      _customDomains = domains
+        .map(d => String(d).trim().toLowerCase())
+        .filter(d => d.length > 0);
+    } else if (typeof domains === 'string') {
+      _customDomains = domains
+        .split(/[\n,]+/)
+        .map(d => d.trim().toLowerCase())
+        .filter(d => d.length > 0);
+    } else {
+      _customDomains = [];
+    }
+  }
+
+  async function loadCustomDomains() {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        const stored = await chrome.storage.local.get('sahayak_blocked_domains');
+        if (stored && stored.sahayak_blocked_domains) {
+          setCustomDomains(stored.sahayak_blocked_domains);
+        }
+      }
+    } catch (e) {
+      console.warn('[SahayakBlocklists] Could not load custom domains:', e);
+    }
+    return getCustomDomains();
+  }
+
+  async function saveCustomDomains(domains) {
+    setCustomDomains(domains);
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        await chrome.storage.local.set({ sahayak_blocked_domains: _customDomains });
+      }
+    } catch (e) {
+      console.warn('[SahayakBlocklists] Could not save custom domains:', e);
+    }
+    return getCustomDomains();
+  }
+
+  // Auto-init custom domains if chrome.storage is present
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    loadCustomDomains();
+    if (chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.sahayak_blocked_domains) {
+          setCustomDomains(changes.sahayak_blocked_domains.newValue || []);
+        }
+      });
+    }
+  }
+
+  /**
+   * Checks whether a URL is on the blocked domain list (built-in patterns or custom user domains).
    * Edge case 4.3.1: Extracts and tests against the hostname only, avoiding
    * false positives when keywords appear in URL paths (e.g. example.com/articles/how-banks-work).
    * Edge case 4.3.2: Local IP addresses are not blocked by default.
@@ -117,7 +180,27 @@
       return false;
     }
 
-    return BLOCKED_DOMAIN_PATTERNS.some(pattern => pattern.test(targetHostname));
+    // 1. Check built-in patterns
+    if (BLOCKED_DOMAIN_PATTERNS.some(pattern => pattern.test(targetHostname))) {
+      return true;
+    }
+
+    // 2. Check custom user-configured domains
+    if (_customDomains && _customDomains.length > 0) {
+      const isCustomMatched = _customDomains.some(entry => {
+        if (!entry) return false;
+        // Strip leading wildcard or dots (e.g. *.example.com -> example.com)
+        const cleanEntry = entry.replace(/^\*\.?/, '').replace(/^\.+/, '').toLowerCase();
+        return (
+          targetHostname === cleanEntry ||
+          targetHostname.endsWith('.' + cleanEntry) ||
+          targetHostname.includes(cleanEntry)
+        );
+      });
+      if (isCustomMatched) return true;
+    }
+
+    return false;
   }
 
   /**
@@ -181,6 +264,10 @@
     BLOCKED_DOMAIN_PATTERNS,
     BLOCKED_INPUT_PATTERNS,
     CONSEQUENTIAL_KEYWORDS,
+    getCustomDomains,
+    setCustomDomains,
+    loadCustomDomains,
+    saveCustomDomains,
     isDomainBlocked,
     isFieldBlocked,
     isConsequential
@@ -191,4 +278,3 @@
   }
   globalThis.SahayakBlocklists = Blocklists;
 })();
-

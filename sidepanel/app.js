@@ -21,6 +21,9 @@
   const settingsContainer = document.getElementById('settings-container');
   const apiKeyBanner = document.getElementById('api-key-banner');
   const bannerSettingsBtn = document.getElementById('banner-settings-btn');
+  const headerSafetyBadge = document.getElementById('header-safety-badge');
+  const domainBlockedBanner = document.getElementById('domain-blocked-banner');
+  const bannerSafetySettingsBtn = document.getElementById('banner-safety-settings-btn');
   const langBtnEn = document.getElementById('btn-lang-en');
   const langBtnHi = document.getElementById('btn-lang-hi');
 
@@ -81,6 +84,8 @@
       chrome.tabs.onActivated.addListener(() => {
         if (window.SummaryView) SummaryView.refreshActiveTabInfo();
         if (window.ChatView) ChatView.updateActivePageInfo();
+        if (window.AgentView && window.AgentView.checkDomainSafety) AgentView.checkDomainSafety();
+        updateSafetyStatus();
       });
     }
     if (chrome.tabs && chrome.tabs.onUpdated) {
@@ -88,6 +93,8 @@
         if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
           if (window.SummaryView) SummaryView.refreshActiveTabInfo();
           if (window.ChatView) ChatView.onTabChanged(tabId, changeInfo);
+          if (window.AgentView && window.AgentView.checkDomainSafety) AgentView.checkDomainSafety();
+          updateSafetyStatus();
         }
       });
     }
@@ -95,9 +102,20 @@
     // Check if API key exists and show/hide the banner
     await checkApiKeyBanner();
 
+    // Check active tab safety status
+    await updateSafetyStatus();
+
     // Listen for key updates from the settings view
     window.addEventListener('sahayak:keys-updated', async () => {
       await checkApiKeyBanner();
+    });
+
+    // Listen for custom blocklist updates
+    window.addEventListener('sahayak:blocked-domains-updated', async () => {
+      await updateSafetyStatus();
+      if (window.SummaryView) SummaryView.refreshActiveTabInfo();
+      if (window.ChatView) ChatView.updateActivePageInfo();
+      if (window.AgentView && window.AgentView.checkDomainSafety) AgentView.checkDomainSafety();
     });
 
     // Load saved language preference
@@ -154,6 +172,8 @@
     btnSettings.addEventListener('click', openSettings);
     btnCloseSettings.addEventListener('click', closeSettings);
     bannerSettingsBtn.addEventListener('click', openSettings);
+    if (headerSafetyBadge) headerSafetyBadge.addEventListener('click', openSettings);
+    if (bannerSafetySettingsBtn) bannerSafetySettingsBtn.addEventListener('click', openSettings);
 
     // Close modal when clicking the overlay (outside the modal box)
     settingsModal.addEventListener('click', (e) => {
@@ -198,6 +218,31 @@
       // If we can't check, show the banner to be safe
       console.warn('[Sahayak] Could not check API key status:', err);
       apiKeyBanner.style.display = 'flex';
+    }
+  }
+
+  // ── Safety Rails Status (Slice 4.3) ─────────────────────────────────
+  /**
+   * Update the header safety badge and danger banner based on active tab domain.
+   */
+  async function updateSafetyStatus() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
+      const isBlocked = Boolean(response?.success && response.data?.isDomainBlocked);
+
+      if (headerSafetyBadge) {
+        headerSafetyBadge.textContent = isBlocked ? '🛑 Blocked' : '🛡️ Protected';
+        headerSafetyBadge.classList.toggle('blocked', isBlocked);
+        headerSafetyBadge.title = isBlocked
+          ? 'Active domain is blocked by Sahayak Safety Rails'
+          : 'Deterministic Safety Rails: Active (Banking & Payment protection)';
+      }
+
+      if (domainBlockedBanner) {
+        domainBlockedBanner.style.display = isBlocked ? 'flex' : 'none';
+      }
+    } catch (err) {
+      console.warn('[Sahayak] Could not update safety status:', err);
     }
   }
 

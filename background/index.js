@@ -301,6 +301,41 @@ async function handleMessage(message, sender) {
       }
     }
 
+    // ── Safety Rails & Domain Blocklist (Slice 4.3) ─────────
+    case 'GET_BLOCKED_DOMAINS': {
+      let custom = [];
+      if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.getCustomDomains === 'function') {
+        custom = SahayakBlocklists.getCustomDomains();
+      } else {
+        const stored = await chrome.storage.local.get('sahayak_blocked_domains');
+        custom = stored.sahayak_blocked_domains || [];
+      }
+      return {
+        success: true,
+        data: {
+          customDomains: custom,
+          builtInCategories: [
+            { id: 'banking', name: 'Banking & Netbanking', icon: '🏦' },
+            { id: 'payments', name: 'Payments & UPI', icon: '💳' },
+            { id: 'crypto', name: 'Crypto Exchanges', icon: '🪙' },
+            { id: 'government', name: 'Government ID & Tax', icon: '🏛️' },
+            { id: 'email', name: 'Webmail Clients', icon: '✉️' },
+            { id: 'credentials', name: 'Passwords & PINs', icon: '🔒' }
+          ]
+        }
+      };
+    }
+
+    case 'SAVE_BLOCKED_DOMAINS': {
+      const { customDomains } = message.payload || {};
+      if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.saveCustomDomains === 'function') {
+        await SahayakBlocklists.saveCustomDomains(customDomains || []);
+      } else {
+        await chrome.storage.local.set({ sahayak_blocked_domains: customDomains || [] });
+      }
+      return { success: true, data: { customDomains } };
+    }
+
     case 'GET_ACTIVE_PAGE_CONTEXT': {
       try {
         const tab = await getActiveTab();
@@ -766,24 +801,30 @@ async function ensureContentScriptInjected(tabId) {
  */
 async function handleForwardToTab(message) {
   let tabId = message.payload?.tabId || message.tabId;
+  let tab = null;
   if (!tabId) {
-    const tab = await getActiveTab();
+    tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
-    if (isRestrictedUrl(tab.url)) {
-      return {
-        success: false,
-        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
-      };
-    }
-    if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
-      return {
-        success: false,
-        error: { code: 'DOMAIN_BLOCKED', message: '🛑 Blocked: Sahayak cannot act on banking, payment, government ID, or sensitive financial pages.' }
-      };
-    }
     tabId = tab.id;
+  } else {
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (e) {}
+  }
+
+  if (tab && isRestrictedUrl(tab.url)) {
+    return {
+      success: false,
+      error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
+    };
+  }
+  if (tab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+    return {
+      success: false,
+      error: { code: 'DOMAIN_BLOCKED', message: '🛑 Blocked: Sahayak cannot act on banking, payment, government ID, or sensitive financial pages.' }
+    };
   }
 
   try {
@@ -806,18 +847,31 @@ async function handleForwardToTab(message) {
  */
 async function handleScanElements(payload = {}) {
   let tabId = payload.tabId;
+  let tab = null;
   if (!tabId) {
-    const tab = await getActiveTab();
+    tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
-    if (isRestrictedUrl(tab.url)) {
-      return {
-        success: false,
-        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot scan system or internal browser pages.' }
-      };
-    }
     tabId = tab.id;
+  } else {
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (e) {}
+  }
+
+  if (tab && isRestrictedUrl(tab.url)) {
+    return {
+      success: false,
+      error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot scan system or internal browser pages.' }
+    };
+  }
+
+  if (tab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+    return {
+      success: false,
+      error: { code: 'DOMAIN_BLOCKED', message: '🛑 Blocked: Cannot scan or interact with sensitive banking or payment pages.' }
+    };
   }
 
   try {
@@ -1989,6 +2043,14 @@ async function handleChatStreamQuery(msg, port, signal) {
     port.postMessage({
       type: 'STREAM_ERROR',
       error: { code: 'RESTRICTED_URL', message: 'Cannot chat with internal browser or system pages.' }
+    });
+    return;
+  }
+
+  if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+    port.postMessage({
+      type: 'STREAM_ERROR',
+      error: { code: 'DOMAIN_BLOCKED', message: 'Sahayak does not send content from sensitive banking or payment pages to external AI services.' }
     });
     return;
   }

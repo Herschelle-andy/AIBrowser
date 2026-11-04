@@ -73,6 +73,49 @@ const SettingsView = (() => {
           </div>
         </div>
 
+        <hr class="section-divider" style="margin: 16px 0;" />
+
+        <div class="form-group safety-settings-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0;">🛡️ Safety Rails &amp; Domain Blocklist</label>
+            <span class="badge-tag badge-success" style="font-size: 11px;">Active</span>
+          </div>
+          <span class="form-hint" style="margin-bottom: 10px;">
+            Deterministic guardrails protect your privacy. Sensitive banking, financial, and personal sites are never read or automated by AI.
+          </span>
+
+          <div class="safety-builtin-box" style="margin-bottom: 12px; background: var(--color-surface); padding: 10px; border-radius: 6px; border: 1px solid var(--color-border);">
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">
+              Default Protected Categories:
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              <span class="safety-category-tag">🏦 Netbanking</span>
+              <span class="safety-category-tag">💳 UPI &amp; Payments</span>
+              <span class="safety-category-tag">🪙 Crypto Exchanges</span>
+              <span class="safety-category-tag">🏛️ Govt ID &amp; Tax</span>
+              <span class="safety-category-tag">✉️ Webmail Clients</span>
+              <span class="safety-category-tag">🔒 Passwords &amp; OTPs</span>
+            </div>
+          </div>
+
+          <label class="form-label" for="custom-blocked-domains" style="font-size: 13px;">
+            Custom Blocked Domains
+          </label>
+          <span class="form-hint">
+            Add extra domains to block from AI access and agent actions (one per line or comma-separated):
+          </span>
+          <textarea
+            id="custom-blocked-domains"
+            class="form-input"
+            rows="3"
+            placeholder="example.com&#10;internal.corp.net&#10;myfinancialportal.org"
+            spellcheck="false"
+          ></textarea>
+          <span class="form-hint" style="font-size: 11px; margin-top: 4px;">
+            💡 Matching domains and all their subdomains will be blocked automatically.
+          </span>
+        </div>
+
         <div id="settings-save-status" class="status-text" aria-live="polite"></div>
 
         <div style="display: flex; gap: 8px;">
@@ -146,6 +189,15 @@ const SettingsView = (() => {
       const langHiRadio = _container.querySelector('#settings-lang-hi');
       if (langEnRadio) langEnRadio.checked = (currentLang === 'en');
       if (langHiRadio) langHiRadio.checked = (currentLang === 'hi-en');
+
+      // Load custom blocked domains
+      const blockRes = await chrome.runtime.sendMessage({ type: 'GET_BLOCKED_DOMAINS' });
+      if (blockRes?.success && Array.isArray(blockRes.data?.customDomains)) {
+        const customInput = _container.querySelector('#custom-blocked-domains');
+        if (customInput) {
+          customInput.value = blockRes.data.customDomains.join('\n');
+        }
+      }
     } catch (err) {
       console.error('[SettingsView] Failed to load settings:', err);
     }
@@ -159,6 +211,11 @@ const SettingsView = (() => {
     const geminiKey = _container.querySelector('#gemini-key').value;
     const groqKey = _container.querySelector('#groq-key').value;
     const selectedLang = _container.querySelector('input[name="settings-language"]:checked')?.value || 'en';
+    const customInput = _container.querySelector('#custom-blocked-domains');
+    const customDomains = (customInput ? customInput.value : '')
+      .split(/[\n,]+/)
+      .map(d => d.trim().toLowerCase())
+      .filter(Boolean);
 
     try {
       // Save language preference
@@ -166,15 +223,22 @@ const SettingsView = (() => {
         await window.SahayakApp.setLanguage(selectedLang);
       }
 
+      // Save custom blocked domains
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_BLOCKED_DOMAINS',
+        payload: { customDomains }
+      });
+
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_API_KEYS',
         payload: { geminiKey, groqKey }
       });
 
       if (response.success) {
-        showStatus('✅ Settings saved successfully.', 'success');
-        // Notify the main app to update the API key banner
+        showStatus('✅ Settings & blocklist saved successfully.', 'success');
+        // Notify the main app to update the API key banner and safety state
         window.dispatchEvent(new CustomEvent('sahayak:keys-updated'));
+        window.dispatchEvent(new CustomEvent('sahayak:blocked-domains-updated'));
       } else {
         showStatus('❌ Failed to save keys.', 'error');
       }
