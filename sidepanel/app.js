@@ -175,6 +175,18 @@
     if (headerSafetyBadge) headerSafetyBadge.addEventListener('click', openSettings);
     if (bannerSafetySettingsBtn) bannerSafetySettingsBtn.addEventListener('click', openSettings);
 
+    const btnDocsPage = document.getElementById('btn-docs-page');
+    if (btnDocsPage) {
+      btnDocsPage.addEventListener('click', () => {
+        try {
+          const docsUrl = chrome.runtime.getURL('docs/landing/index.html');
+          chrome.tabs.create({ url: docsUrl });
+        } catch (e) {
+          window.open('../docs/landing/index.html', '_blank');
+        }
+      });
+    }
+
     // Close modal when clicking the overlay (outside the modal box)
     settingsModal.addEventListener('click', (e) => {
       if (e.target === settingsModal) {

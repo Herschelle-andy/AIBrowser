@@ -141,10 +141,44 @@ const SettingsView = (() => {
             👁️
           </button>
         </div>
+
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; font-size: 12px;">
+          <a id="link-product-site" href="../docs/landing/index.html" target="_blank" rel="noopener" style="color: var(--color-primary); font-weight: 500; text-decoration: none;">
+            🌐 Product Site ↗
+          </a>
+          <a id="link-docs-readme" href="../docs/landing/docs.html" target="_blank" rel="noopener" style="color: var(--color-primary); font-weight: 500; text-decoration: none;">
+            📖 Documentation &amp; README ↗
+          </a>
+        </div>
       </form>
     `;
 
     _saveStatus = container.querySelector('#settings-save-status');
+
+    // Safe tab opener for documentation links
+    const linkSite = container.querySelector('#link-product-site');
+    if (linkSite) {
+      linkSite.addEventListener('click', (e) => {
+        e.preventDefault();
+        try {
+          chrome.tabs.create({ url: chrome.runtime.getURL('docs/landing/index.html') });
+        } catch (_) {
+          window.open('../docs/landing/index.html', '_blank');
+        }
+      });
+    }
+
+    const linkDocs = container.querySelector('#link-docs-readme');
+    if (linkDocs) {
+      linkDocs.addEventListener('click', (e) => {
+        e.preventDefault();
+        try {
+          chrome.tabs.create({ url: chrome.runtime.getURL('docs/landing/docs.html') });
+        } catch (_) {
+          window.open('../docs/landing/docs.html', '_blank');
+        }
+      });
+    }
 
     // Bind events
     container.querySelector('#settings-form').addEventListener('submit', onSave);

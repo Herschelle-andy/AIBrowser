@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahayak — Full Documentation & README</title>
+  <meta name="description" content="Complete documentation, architecture specifications, usage guide, and safety principles for Sahayak AI Browser Assistant.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --bg-card: #131b2e;
+      --bg-card-hover: #1a253e;
+      --border: #23314f;
+      --border-focus: #3b82f6;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #4f46e5;
+      --primary-light: #6366f1;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--primary-light);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    a:hover {
+      color: var(--accent);
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+      background: rgba(11, 15, 25, 0.9);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 65px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .btn-header {
+      background: var(--bg-card);
+      color: var(--text) !important;
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-header:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-focus);
+    }
+    .btn-primary-header {
+      background: var(--primary);
+      border-color: var(--primary-light);
+      color: #fff !important;
+    }
+    .btn-primary-header:hover {
+      background: var(--primary-light);
+    }
+
+    /* Layout */
+    .docs-layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 24px;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 40px;
+    }
+
+    /* Sidebar / TOC */
+    .sidebar {
+      position: sticky;
+      top: 90px;
+      height: calc(100vh - 120px);
+      overflow-y: auto;
+      padding-right: 12px;
+    }
+    .sidebar-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .toc-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .toc-list a {
+      color: var(--text-muted);
+      font-size: 14px;
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .toc-list a:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    /* Content Area */
+    .content {
+      min-width: 0;
+    }
+    .doc-hero {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+    .doc-hero h1 {
+      font-size: 36px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+    .doc-tagline {
+      font-size: 18px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .badges-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .badge-pill {
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .badge-mv3 { background: rgba(66, 133, 244, 0.2); color: #93c5fd; border: 1px solid rgba(66, 133, 244, 0.4); }
+    .badge-version { background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4); }
+    .badge-license { background: rgba(16, 185, 129, 0.2); color: #a7f3d0; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+    /* Markdown Styling */
+    h2 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 48px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-top: 24px;
+      margin-bottom: 10px;
+    }
+    p {
+      margin-bottom: 16px;
+      color: #cbd5e1;
+    }
+    ul, ol {
+      margin-bottom: 20px;
+      padding-left: 24px;
+      color: #cbd5e1;
+    }
+    li {
+      margin-bottom: 6px;
+    }
+    code {
+      background: #080c14;
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+      color: #38bdf8;
+    }
+    pre {
+      background: #080c14;
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+      color: #e2e8f0;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    /* Showcase Table */
+    .showcase-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .showcase-table th {
+      background: #0e1526;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #fff;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .showcase-table td {
+      padding: 16px;
+      border: 1px solid var(--border);
+      text-align: center;
+      vertical-align: top;
+    }
+    .showcase-table img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+    .showcase-caption {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-style: italic;
+    }
+
+    /* Callout */
+    .callout {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .callout-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+    .callout-danger {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    @media (max-width: 860px) {
+      .docs-layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header>
+    <div class="header-nav">
+      <div class="logo-group">
+        <a href="index.html" style="color: #fff; display: flex; align-items: center; gap: 8px;">
+          <span>🤖</span> Sahayak
+        </a>
+        <span class="badge">v1.0.0 Docs</span>
+      </div>
+      <div class="header-actions">
+        <a href="index.html" class="btn-header">
+          ← Product Overview
+        </a>
+        <a href="https://github.com/your-username/sahayak/releases" class="btn-header btn-primary-header">
+          📦 Download ZIP
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <!-- Sidebar TOC -->
+    <nav class="sidebar">
+      <div class="sidebar-title">Table of Contents</div>
+      <ul class="toc-list">
+        <li><a href="#showcase">📸 Visual Showcase</a></li>
+        <li><a href="#features">✨ Complete Features</a></li>
+        <li><a href="#architecture">🏗️ Architecture</a></li>
+        <li><a href="#install">🚀 Quickstart Install</a></li>
+        <li><a href="#config">⚙️ API Configuration</a></li>
+        <li><a href="#usage">📖 Usage Examples</a></li>
+        <li><a href="#safety">🛡️ Safety Rails</a></li>
+        <li><a href="#dev">🧪 Development</a></li>
+        <li><a href="#contributing">🤝 Contributing</a></li>
+        <li><a href="#license">📄 License</a></li>
+      </ul>
+    </nav>
+
+    <!-- Main Content (Full README Content) -->
+    <main class="content">
+      <div class="doc-hero">
+        <h1>Sahayak — AI Browser Assistant</h1>
+        <p class="doc-tagline">
+          Your browser AI co-pilot — reads, explains, sees, and acts on web pages with your explicit approval.
+        </p>
+        <div class="badges-row">
+          <span class="badge-pill badge-mv3">Chrome Manifest V3</span>
+          <span class="badge-pill badge-version">Release v1.0.0</span>
+          <span class="badge-pill badge-license">MIT License</span>
+        </div>
+        <p>
+          Sahayak is a Chrome Extension (Manifest V3) that lives in your browser's side panel. Built with Google's <strong>Gemini 2.5 Flash</strong> and resilient failover via <strong>Groq (Llama-3.1-8b)</strong>, Sahayak digests dense articles, answers visual questions from screenshots, manages personal profiles for one-click form completion, and executes browser actions step-by-step under strict <strong>deterministic safety rails</strong>.
+        </p>
+      </div>
+
+      <!-- 1. Visual Showcase -->
+      <section id="showcase">
+        <h2>📸 Visual Showcase</h2>
+        <table class="showcase-table">
+          <thead>
+            <tr>
+              <th>📄 Intelligent Reader Brief</th>
+              <th>🦾 Supervised Browser Agent</th>
+              <th>🛡️ Deterministic Safety Rails</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <img src="../screenshots/summary.svg" alt="Readability Summary">
+                <div class="showcase-caption">Mozilla Readability 3-part brief with key takeaways</div>
+              </td>
+              <td>
+                <img src="../screenshots/agent.svg" alt="Browser Action Loop">
+                <div class="showcase-caption">Numbered element badges with human approval</div>
+              </td>
+              <td>
+                <img src="../screenshots/safety.svg" alt="Safety Rails">
+                <div class="showcase-caption">Hardcoded domain & credential field blocklists</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 2. Features Breakdown -->
+      <section id="features">
+        <h2>✨ Complete Feature Breakdown</h2>
+
+        <h3>Phase 1: The Reader &amp; Explainer</h3>
+        <ul>
+          <li><strong>Structured 3-Part Brief:</strong> One-click article extraction powered by Mozilla Readability. Delivers a <strong>💡 TL;DR</strong> single-sentence core insight, <strong>📌 5 Key Takeaways</strong>, and <strong>🎯 Next Steps</strong> with paywall/teaser detection.</li>
+          <li><strong>Text Explanation:</strong> Paste or select text on any page for an instant, plain-language explanation with 1-click clipboard copy.</li>
+          <li><strong>Bilingual English &amp; Hinglish:</strong> Seamlessly switch between standard English and Roman-script Hinglish (<code>hi-en</code>) at any time.</li>
+          <li><strong>Right-Click Context Menu:</strong> Highlight text anywhere to "Explain", "Summarise", or "Translate" directly from the native Chrome context menu.</li>
+        </ul>
+
+        <h3>Phase 2: The Chat &amp; Vision Engine</h3>
+        <ul>
+          <li><strong>In-Page Grounded Chat:</strong> Ask questions grounded strictly in live DOM content with session memory and quick follow-up chips.</li>
+          <li><strong>Multimodal Screenshot Q&amp;A:</strong> Capture full viewport or interactive cropped canvas regions. Gemini Flash visually inspects charts, flowcharts, tables, and infographics.</li>
+          <li><strong>Free-Tier Resilience &amp; Fallback:</strong> Exponential backoff with jitter on HTTP 429 quota exhaustion, seamlessly failing over to Groq (<code>llama-3.1-8b-instant</code>) for text queries.</li>
+        </ul>
+
+        <h3>Phase 3: The Supervised Agent ("The Hands")</h3>
+        <ul>
+          <li><strong>Interactive Element Scanner:</strong> Scans clickable links, buttons, inputs, and dropdowns into an accessibility-aligned <code>actionMap</code>.</li>
+          <li><strong>Numbered Visual Badges:</strong> Overlays high-contrast badges (<code>#1</code>, <code>#2</code>, <code>#3</code>) directly over interactive page elements.</li>
+          <li><strong>Supervised Approval Loop:</strong> Proposes one action at a time via an <code>ActionCard</code>. Requires human approval before executing. Includes a <strong>Dry-Run Mode</strong> checkbox and persistent <strong>[STOP]</strong> button.</li>
+          <li><strong>Synthetic Event Dispatcher:</strong> Dispatches native descriptor setters and full event sequences (<code>pointerdown</code>, <code>mousedown</code>, <code>input</code>, <code>change</code>) compatible with React, Vue, and Angular forms.</li>
+        </ul>
+
+        <h3>Phase 4: Memory, Custom Skills &amp; Safety Rails</h3>
+        <ul>
+          <li><strong>Local Profile Memory:</strong> Store personal, academic, and professional info directly in <code>chrome.storage.local</code> for instant 1-click form filling.</li>
+          <li><strong>One-Click Saved Skills:</strong> Ships with built-in skills (Exam Notes, Explain in Hinglish, Reply Politely, Fill Form) and custom skill creation with template variables (<code>{{selectedText}}</code>, <code>{{profile.fullName}}</code>).</li>
+          <li><strong>Deterministic Safety Rails:</strong> Hardcoded domain blocklists (banking, UPI, crypto, government ID), credential field blocklists (passwords, OTPs, PINs, CVVs), and consequential action double-confirmations.</li>
+        </ul>
+      </section>
+
+      <!-- 3. Architecture -->
+      <section id="architecture">
+        <h2>🏗️ Project Architecture</h2>
+        <p>Sahayak is built using modern Chrome Manifest V3 specifications with zero runtime build dependencies:</p>
+        <pre><code>AIBrowser/
+├── manifest.json              # Chrome Manifest V3 descriptor
+├── background/
+│   └── index.js               # Service worker, message routing & agent loop
+├── content/
+│   ├── index.js               # Content script entry point
+│   ├── reader.js              # DOM cloning & Readability extractor
+│   ├── scanner.js             # Interactive DOM element scanner
+│   ├── overlay.js             # Numbered badge renderer
+│   ├── executor.js            # Synthetic event dispatcher (React-safe)
+│   └── lib/
+│       └── Readability.js     # Standalone Mozilla Readability engine
+├── safety/
+│   ├── blocklists.js          # Domain, input field, and consequential regexes
+│   ├── consequential.js       # Action consequence evaluator
+│   └── guardrails.js          # Unified safety check pipeline
+├── services/
+│   ├── ai/
+│   │   ├── geminiProvider.js  # Google Gemini REST client
+│   │   ├── groqProvider.js    # Groq OpenAI-compatible fallback client
+│   │   ├── modelGateway.js    # Model router & fallback orchestrator
+│   │   ├── promptBuilder.js   # Prompt formatting & profile injector
+│   │   └── retryWithFallback.js# Exponential backoff jitter handler
+│   ├── state/
+│   │   └── agentStateMachine.js# Finite state machine for supervised agent
+│   └── storage/
+│       ├── profileStore.js    # Local profile memory CRUD
+│       └── skillsStore.js     # Saved skills engine CRUD & templates
+├── sidepanel/
+│   ├── index.html             # Side panel DOM structure
+│   ├── app.js                 # UI controller, routing & tab state
+│   ├── components/            # ActionCard, AgentView, ChatView, SettingsView, etc.
+│   └── styles/panel.css       # Dark-mode design system
+├── scripts/
+│   ├── build-zip.js           # Zero-dependency release packager
+│   └── run-tests.js           # Automated test suite (syntax, stores, safety)
+└── docs/
+    ├── landing/index.html     # Product landing page
+    ├── landing/docs.html      # Comprehensive documentation (this page)
+    └── screenshots/           # SVG mockups and diagrams</code></pre>
+      </section>
+
+      <!-- 4. Quickstart Install -->
+      <section id="install">
+        <h2>🚀 Quickstart Installation</h2>
+        <h3>Option A: Install from Release ZIP (Recommended)</h3>
+        <ol>
+          <li>Download the latest <code>sahayak-v1.0.0.zip</code> from <a href="https://github.com/your-username/sahayak/releases" target="_blank" rel="noopener">Releases</a>.</li>
+          <li>Extract the archive into a folder on your computer.</li>
+          <li>Open Chrome (or Brave, Edge, Arc) and go to <code>chrome://extensions</code>.</li>
+          <li>Toggle on <strong>Developer mode</strong> in the top-right corner.</li>
+          <li>Click <strong>Load unpacked</strong> and select the unzipped directory.</li>
+          <li>Pin <strong>Sahayak</strong> to your toolbar for easy 1-click access.</li>
+        </ol>
+
+        <h3>Option B: Clone from Source</h3>
+        <pre><code>git clone https://github.com/your-username/sahayak.git
+cd sahayak</code></pre>
+        <p>Then load the folder directly via <code>chrome://extensions</code> using <strong>Load unpacked</strong>.</p>
+      </section>
+
+      <!-- 5. Configuration -->
+      <section id="config">
+        <h2>⚙️ Configuration &amp; API Keys</h2>
+        <ol>
+          <li>Open the Sahayak side panel by clicking the toolbar icon.</li>
+          <li>Click the <strong>⚙️ Settings</strong> button in the top right.</li>
+          <li><strong>Primary Model (Gemini):</strong> Obtain a free API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> and paste it into the Gemini API Key field.</li>
+          <li><strong>Backup Model (Optional Groq):</strong> Obtain a key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq Console</a> and paste it into the Groq field.</li>
+          <li>Click <strong>💾 Save Settings</strong>.</li>
+        </ol>
+        <div class="callout">
+          <strong>🔒 Local Privacy Guarantee:</strong> Your API keys and profile information are stored exclusively in your browser's local <code>chrome.storage.local</code>. They are never sent through any intermediary proxy servers.
+        </div>
+      </section>
+
+      <!-- 6. Usage Guide -->
+      <section id="usage">
+        <h2>📖 Usage Guide &amp; Examples</h2>
+        <h3>1. Summarising Articles</h3>
+        <p>Open any article, click the <strong>Summary</strong> tab, and hit <strong>⚡ Summarise This Page</strong> to receive the structured 3-part brief.</p>
+
+        <h3>2. Grounded Chat with Webpages</h3>
+        <p>Switch to the <strong>Chat</strong> tab and ask specific questions (e.g. <em>"What pricing plans are described on this page?"</em>). Responses are grounded strictly in live DOM context.</p>
+
+        <h3>3. Visual Screenshot Q&amp;A</h3>
+        <p>Switch to the <strong>Vision</strong> tab. Choose <strong>Full Viewport</strong> or <strong>Select Area</strong> to crop a chart, then ask questions about the visual data.</p>
+
+        <h3>4. Running the Supervised Agent</h3>
+        <p>On any form or multi-step page, switch to the <strong>Agent</strong> tab. Enter your goal (e.g. <em>"Fill in the contact form using my profile details"</em>), review each proposed action, and click <strong>✓ Approve</strong>.</p>
+
+        <h3>5. Managing Saved Skills</h3>
+        <p>Use the <strong>Skills</strong> tab to run pre-packaged routines like <strong>📝 Exam Notes</strong>, or create reusable custom skills using <code>{{selectedText}}</code> and <code>{{profile.fullName}}</code> variables.</p>
+      </section>
+
+      <!-- 7. Safety Principles -->
+      <section id="safety">
+        <h2>🛡️ Deterministic Safety Principles</h2>
+        <div class="callout callout-danger">
+          <strong>Non-Negotiable Code Guardrails:</strong> Unlike prompt-based safety that LLMs can ignore, Sahayak enforces hard deterministic code rules before any action is proposed or dispatched.
+        </div>
+        <ul>
+          <li><strong>Domain Blocklist:</strong> Completely blocks reading and automation on banking (SBI, HDFC, Chase), payments (PayPal, Stripe, Razorpay), crypto (Binance, Coinbase), and government identity portals (UIDAI, IncomeTax).</li>
+          <li><strong>Field Blocklist:</strong> Prevents typing into fields with type <code>password</code> or names matching <code>otp</code>, <code>pin</code>, <code>cvv</code>, <code>card</code>, <code>ssn</code>, or <code>aadhaar</code>.</li>
+          <li><strong>Consequential Action Gate:</strong> Actions matching submit, pay, purchase, or delete require an explicit manual checkbox confirmation.</li>
+          <li><strong>Emergency Stop:</strong> The persistent red <strong>[STOP]</strong> button terminates execution immediately and clears all on-screen badges.</li>
+        </ul>
+      </section>
+
+      <!-- 8. Development -->
+      <section id="dev">
+        <h2>🧪 Development &amp; Packaging</h2>
+        <p>Sahayak uses pure Node.js without npm build tools or compilation steps.</p>
+        <p><strong>Run Automated Test Suite:</strong></p>
+        <pre><code>node scripts/run-tests.js
+# or
+npm test</code></pre>
+        <p><strong>Build Release ZIP:</strong></p>
+        <pre><code>node scripts/build-zip.js
+# or
+npm run build:zip</code></pre>
+        <p>Produces <code>sahayak-v1.0.0.zip</code> containing only the runtime extension files and excluding tests, docs, and git files.</p>
+      </section>
+
+      <!-- 9. Contributing & License -->
+      <section id="contributing">
+        <h2>🤝 Contributing</h2>
+        <p>Contributions are welcome! Please ensure all tests pass with <code>npm test</code> before submitting a pull request.</p>
+      </section>
+
+      <section id="license">
+        <h2>📄 License</h2>
+        <p>This project is licensed under the MIT License — see the <a href="https://github.com/your-username/sahayak/blob/main/LICENSE">LICENSE</a> file for details.</p>
+      </section>
+    </main>
+  </div>
+
+</body>
+</html>
+

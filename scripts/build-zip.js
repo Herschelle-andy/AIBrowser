@@ -28,7 +28,9 @@ const INCLUDED_ENTRIES = [
   'content',
   'sidepanel',
   'services',
-  'safety'
+  'safety',
+  'docs/landing',
+  'docs/screenshots'
 ];
 
 /**
