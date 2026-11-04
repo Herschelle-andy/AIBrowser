@@ -241,6 +241,19 @@
   }
 
   /**
+   * Helper to retrieve active tab ID from the current browser window.
+   */
+  async function getTargetTabId() {
+    try {
+      if (chrome.tabs && chrome.tabs.query) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) return tab.id;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  /**
    * Bind DOM event listeners.
    */
   function bindEvents() {
@@ -255,7 +268,8 @@
       btnShowBadges.addEventListener('click', async () => {
         showStatus('Scanning and displaying badges…');
         try {
-          const scanRes = await chrome.runtime.sendMessage({ type: 'SCAN_ELEMENTS' });
+          const tabId = await getTargetTabId();
+          const scanRes = await chrome.runtime.sendMessage({ type: 'SCAN_ELEMENTS', payload: { tabId } });
           if (!scanRes || !scanRes.success) {
             const errMsg = scanRes?.error?.message || (typeof scanRes?.error === 'string' ? scanRes.error : '') || 'Scan failed.';
             showStatus(errMsg, 'error');
@@ -264,7 +278,7 @@
           if (scanRes.data) {
             updateElementCount(scanRes.data.totalElements);
           }
-          const badgeRes = await chrome.runtime.sendMessage({ type: 'SHOW_BADGES' });
+          const badgeRes = await chrome.runtime.sendMessage({ type: 'SHOW_BADGES', payload: { tabId } });
           if (badgeRes && badgeRes.success) {
             showStatus(`✓ Numbered badges displayed (${badgeRes.count || 0} elements).`, 'success');
           } else {
@@ -280,7 +294,8 @@
     if (btnClearBadges) {
       btnClearBadges.addEventListener('click', async () => {
         try {
-          const res = await chrome.runtime.sendMessage({ type: 'CLEAR_BADGES' });
+          const tabId = await getTargetTabId();
+          const res = await chrome.runtime.sendMessage({ type: 'CLEAR_BADGES', payload: { tabId } });
           if (res && res.success) {
             showStatus('✓ Badges cleared.', 'info');
           } else {
@@ -297,7 +312,8 @@
       btnRescan.addEventListener('click', async () => {
         showStatus('Scanning page elements…');
         try {
-          const res = await chrome.runtime.sendMessage({ type: 'SCAN_ELEMENTS' });
+          const tabId = await getTargetTabId();
+          const res = await chrome.runtime.sendMessage({ type: 'SCAN_ELEMENTS', payload: { tabId } });
           if (res && res.success && res.data) {
             updateElementCount(res.data.totalElements);
             showStatus(`✓ Found ${res.data.totalElements} interactive elements.`, 'success');
@@ -388,9 +404,10 @@
       btnRehighlight.addEventListener('click', async () => {
         if (!lastMatchedElementId) return;
         try {
+          const tabId = await getTargetTabId();
           await chrome.runtime.sendMessage({
             type: 'HIGHLIGHT_ELEMENT',
-            payload: { elementId: lastMatchedElementId }
+            payload: { elementId: lastMatchedElementId, tabId }
           });
         } catch (err) {}
       });
@@ -427,9 +444,10 @@
     if (statusMsg) statusMsg.textContent = 'Initializing agent…';
 
     try {
+      const tabId = await getTargetTabId();
       const res = await chrome.runtime.sendMessage({
         type: 'AGENT_START',
-        payload: { goal, maxSteps, dryRun }
+        payload: { goal, maxSteps, dryRun, tabId }
       });
 
       if (!res || !res.success) {
@@ -695,9 +713,10 @@
     if (errorArea) errorArea.style.display = 'none';
 
     try {
+      const tabId = await getTargetTabId();
       const response = await chrome.runtime.sendMessage({
         type: 'FIND_ELEMENT',
-        payload: { query }
+        payload: { query, tabId }
       });
 
       if (!response || !response.success) {

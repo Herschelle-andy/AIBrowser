@@ -110,6 +110,7 @@
     }
 
     overlayHost = document.createElement(OVERLAY_TAG);
+    overlayHost.style.cssText = 'position: absolute !important; top: 0 !important; left: 0 !important; width: 0 !important; height: 0 !important; overflow: visible !important; pointer-events: none !important; z-index: 2147483647 !important;';
     // Attach closed shadow DOM root so host scripts cannot inspect or mutate
     shadowRoot = overlayHost.attachShadow({ mode: 'closed' });
 
@@ -117,7 +118,7 @@
     style.textContent = OVERLAY_STYLES;
     shadowRoot.appendChild(style);
 
-    const rootTarget = document.documentElement || document.body;
+    const rootTarget = document.body || document.documentElement;
     rootTarget.appendChild(overlayHost);
 
     return shadowRoot;

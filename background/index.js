@@ -459,17 +459,23 @@ async function handleMessage(message, sender) {
 async function getActiveTab() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab && tab.id && !isRestrictedUrl(tab.url)) return tab;
     if (tab && tab.id) return tab;
   } catch (e) {}
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id && !isRestrictedUrl(tab.url)) return tab;
     if (tab && tab.id) return tab;
   } catch (e) {}
 
   try {
     const tabs = await chrome.tabs.query({ active: true });
-    if (tabs && tabs.length > 0) return tabs[0];
+    if (tabs && tabs.length > 0) {
+      const nonRestricted = tabs.find(t => t.id && !isRestrictedUrl(t.url));
+      if (nonRestricted) return nonRestricted;
+      return tabs[0];
+    }
   } catch (e) {}
 
   return null;
@@ -621,8 +627,6 @@ async function handleFindElement(payload = {}) {
         error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
       };
     }
-    tabId = tab.id;
-  }
     tabId = tab.id;
   }
 
