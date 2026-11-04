@@ -139,8 +139,16 @@ global.chrome = {
   assert.strictEqual(Blocklists.isDomainBlocked('https://mybank.internal/dashboard'), true);
   assert.strictEqual(Blocklists.isDomainBlocked('https://sub.confidential.corp/data'), true);
   assert.strictEqual(Blocklists.isDomainBlocked('https://wikipedia.org'), false);
+
+  // Robust URL-based normalization test
+  Blocklists.setCustomDomains(['https://wikipedia.org/']);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://wikipedia.org/'), true);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://en.wikipedia.org/wiki/Main_Page'), true);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://en.m.wikipedia.org'), true);
+
   Blocklists.setCustomDomains([]);
   assert.strictEqual(Blocklists.isDomainBlocked('https://mybank.internal/dashboard'), false);
+  assert.strictEqual(Blocklists.isDomainBlocked('https://wikipedia.org'), false);
 
   assert.strictEqual(Blocklists.isFieldBlocked({ type: 'password' }), true);
   assert.strictEqual(Blocklists.isFieldBlocked({ type: 'text', name: 'user_otp' }), true);

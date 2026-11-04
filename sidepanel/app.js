@@ -228,10 +228,16 @@
   async function updateSafetyStatus() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
-      const isBlocked = Boolean(response?.success && response.data?.isDomainBlocked);
+      let isBlocked = false;
+      if (response?.success && response.data) {
+        isBlocked = Boolean(
+          response.data.isDomainBlocked ||
+          (typeof SahayakBlocklists !== 'undefined' && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(response.data.url))
+        );
+      }
 
       if (headerSafetyBadge) {
-        headerSafetyBadge.textContent = isBlocked ? '🛑 Blocked' : '🛡️ Protected';
+        headerSafetyBadge.textContent = isBlocked ? '🛑 Blocked Domain' : '🛡️ Protected';
         headerSafetyBadge.classList.toggle('blocked', isBlocked);
         headerSafetyBadge.title = isBlocked
           ? 'Active domain is blocked by Sahayak Safety Rails'

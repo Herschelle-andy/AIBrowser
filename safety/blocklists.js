@@ -3,7 +3,8 @@
  *
  * Deterministic blocklists for high-risk domains, sensitive credential fields,
  * and consequential browser actions.
- * Supports built-in patterns and user-configured custom blocked domains.
+ * Supports built-in patterns and user-configured custom blocked domains with
+ * robust URL and domain normalization.
  *
  * Architecture references: §12 (Safety Rails Engine), Edge cases 4.3.1 - 4.3.10
  */
@@ -90,6 +91,29 @@
   ]);
 
   /**
+   * Normalizes any raw domain entry (e.g. "https://en.wikipedia.org/wiki/...",
+   * "*.wikipedia.org", "www.example.com", "wikipedia.org/") into a clean hostname.
+   *
+   * @param {string} raw
+   * @returns {string}
+   */
+  function normalizeDomain(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    let s = raw.trim().toLowerCase();
+    // Strip scheme if present
+    s = s.replace(/^[a-zA-Z]+:\/\//, '');
+    // Strip path, query, hash
+    s = s.split('/')[0].split('?')[0].split('#')[0];
+    // Strip leading wildcard *. or .
+    s = s.replace(/^\*\.?/, '').replace(/^\.+/, '');
+    // Strip leading www.
+    s = s.replace(/^www\./, '');
+    // Strip port
+    s = s.split(':')[0];
+    return s.trim();
+  }
+
+  /**
    * User-defined custom blocked domains.
    */
   let _customDomains = [];
@@ -101,16 +125,18 @@
   function setCustomDomains(domains) {
     if (Array.isArray(domains)) {
       _customDomains = domains
-        .map(d => String(d).trim().toLowerCase())
+        .map(normalizeDomain)
         .filter(d => d.length > 0);
     } else if (typeof domains === 'string') {
       _customDomains = domains
         .split(/[\n,]+/)
-        .map(d => d.trim().toLowerCase())
+        .map(normalizeDomain)
         .filter(d => d.length > 0);
     } else {
       _customDomains = [];
     }
+    // Deduplicate
+    _customDomains = Array.from(new Set(_customDomains));
   }
 
   async function loadCustomDomains() {
@@ -188,13 +214,13 @@
     // 2. Check custom user-configured domains
     if (_customDomains && _customDomains.length > 0) {
       const isCustomMatched = _customDomains.some(entry => {
-        if (!entry) return false;
-        // Strip leading wildcard or dots (e.g. *.example.com -> example.com)
-        const cleanEntry = entry.replace(/^\*\.?/, '').replace(/^\.+/, '').toLowerCase();
+        const clean = normalizeDomain(entry);
+        if (!clean) return false;
         return (
-          targetHostname === cleanEntry ||
-          targetHostname.endsWith('.' + cleanEntry) ||
-          targetHostname.includes(cleanEntry)
+          targetHostname === clean ||
+          targetHostname.endsWith('.' + clean) ||
+          ('www.' + targetHostname) === clean ||
+          clean.endsWith('.' + targetHostname)
         );
       });
       if (isCustomMatched) return true;
@@ -264,6 +290,7 @@
     BLOCKED_DOMAIN_PATTERNS,
     BLOCKED_INPUT_PATTERNS,
     CONSEQUENTIAL_KEYWORDS,
+    normalizeDomain,
     getCustomDomains,
     setCustomDomains,
     loadCustomDomains,

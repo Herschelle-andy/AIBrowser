@@ -12,6 +12,8 @@
 const SettingsView = (() => {
   let _container = null;
   let _saveStatus = null;
+  let _currentActiveUrl = '';
+  let _currentActiveHostname = '';
 
   /**
    * Render the settings form into the target container.
@@ -98,6 +100,19 @@ const SettingsView = (() => {
             </div>
           </div>
 
+          <div id="safety-current-site-box" style="margin-bottom: 10px; background: var(--color-surface); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <span style="font-size: 11px; color: var(--color-text-secondary);">Active Site:</span>
+              <strong id="safety-current-site-domain" style="font-size: 12px; margin-left: 4px;">detecting...</strong>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span id="safety-current-site-badge" class="badge-tag">...</span>
+              <button type="button" id="btn-block-current-domain" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 7px;">
+                ➕ Block Site
+              </button>
+            </div>
+          </div>
+
           <label class="form-label" for="custom-blocked-domains" style="font-size: 13px;">
             Custom Blocked Domains
           </label>
@@ -136,6 +151,23 @@ const SettingsView = (() => {
     container.querySelector('#btn-toggle-visibility').addEventListener('click', onToggleVisibility);
     container.querySelector('#gemini-key').addEventListener('input', onGeminiKeyInput);
     container.querySelector('#groq-key').addEventListener('input', onGroqKeyInput);
+
+    // Quick block current active site button
+    const btnBlockCurrent = container.querySelector('#btn-block-current-domain');
+    if (btnBlockCurrent) {
+      btnBlockCurrent.addEventListener('click', () => {
+        if (!_currentActiveHostname) return;
+        const customInput = _container.querySelector('#custom-blocked-domains');
+        if (!customInput) return;
+        const currentVal = customInput.value.trim();
+        const domains = currentVal ? currentVal.split(/[\n,]+/).map(d => d.trim().toLowerCase()) : [];
+        if (!domains.includes(_currentActiveHostname)) {
+          domains.push(_currentActiveHostname);
+          customInput.value = domains.join('\n');
+          showStatus(`➕ Added ${_currentActiveHostname} to custom list. Click "Save Settings" to enforce.`, 'info');
+        }
+      });
+    }
 
     // Sync language selection when radio changes
     container.querySelectorAll('input[name="settings-language"]').forEach((radio) => {
@@ -198,6 +230,27 @@ const SettingsView = (() => {
           customInput.value = blockRes.data.customDomains.join('\n');
         }
       }
+
+      // Check current active tab domain & safety status
+      try {
+        const tabRes = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
+        if (tabRes?.success && tabRes.data) {
+          _currentActiveUrl = tabRes.data.url || '';
+          try {
+            _currentActiveHostname = new URL(_currentActiveUrl).hostname.replace(/^www\./, '');
+          } catch (e) {
+            _currentActiveHostname = _currentActiveUrl.replace(/^[a-zA-Z]+:\/\//, '').split('/')[0];
+          }
+          const siteDomainEl = _container.querySelector('#safety-current-site-domain');
+          const siteBadgeEl = _container.querySelector('#safety-current-site-badge');
+          if (siteDomainEl) siteDomainEl.textContent = _currentActiveHostname || 'None';
+          if (siteBadgeEl) {
+            const isBlocked = Boolean(tabRes.data.isDomainBlocked);
+            siteBadgeEl.textContent = isBlocked ? '🛑 Blocked' : '🛡️ Allowed';
+            siteBadgeEl.className = isBlocked ? 'badge-tag badge-danger' : 'badge-tag badge-success';
+          }
+        }
+      } catch (e) {}
     } catch (err) {
       console.error('[SettingsView] Failed to load settings:', err);
     }
@@ -212,10 +265,21 @@ const SettingsView = (() => {
     const groqKey = _container.querySelector('#groq-key').value;
     const selectedLang = _container.querySelector('input[name="settings-language"]:checked')?.value || 'en';
     const customInput = _container.querySelector('#custom-blocked-domains');
-    const customDomains = (customInput ? customInput.value : '')
+    const rawText = customInput ? customInput.value : '';
+    const customDomains = rawText
       .split(/[\n,]+/)
-      .map(d => d.trim().toLowerCase())
+      .map(d => {
+        if (typeof SahayakBlocklists !== 'undefined' && typeof SahayakBlocklists.normalizeDomain === 'function') {
+          return SahayakBlocklists.normalizeDomain(d);
+        }
+        return d.trim().toLowerCase().replace(/^[a-zA-Z]+:\/\//, '').split('/')[0].replace(/^www\./, '');
+      })
       .filter(Boolean);
+
+    // Immediate synchronous update in sidepanel context
+    if (typeof SahayakBlocklists !== 'undefined' && typeof SahayakBlocklists.setCustomDomains === 'function') {
+      SahayakBlocklists.setCustomDomains(customDomains);
+    }
 
     try {
       // Save language preference
@@ -223,7 +287,7 @@ const SettingsView = (() => {
         await window.SahayakApp.setLanguage(selectedLang);
       }
 
-      // Save custom blocked domains
+      // Save custom blocked domains to background
       await chrome.runtime.sendMessage({
         type: 'SAVE_BLOCKED_DOMAINS',
         payload: { customDomains }
@@ -236,6 +300,17 @@ const SettingsView = (() => {
 
       if (response.success) {
         showStatus('✅ Settings & blocklist saved successfully.', 'success');
+
+        // Immediately re-evaluate active site badge inside settings modal
+        if (_currentActiveUrl && typeof SahayakBlocklists !== 'undefined' && typeof SahayakBlocklists.isDomainBlocked === 'function') {
+          const isNowBlocked = SahayakBlocklists.isDomainBlocked(_currentActiveUrl);
+          const siteBadgeEl = _container.querySelector('#safety-current-site-badge');
+          if (siteBadgeEl) {
+            siteBadgeEl.textContent = isNowBlocked ? '🛑 Blocked' : '🛡️ Allowed';
+            siteBadgeEl.className = isNowBlocked ? 'badge-tag badge-danger' : 'badge-tag badge-success';
+          }
+        }
+
         // Notify the main app to update the API key banner and safety state
         window.dispatchEvent(new CustomEvent('sahayak:keys-updated'));
         window.dispatchEvent(new CustomEvent('sahayak:blocked-domains-updated'));

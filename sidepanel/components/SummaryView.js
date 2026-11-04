@@ -242,6 +242,11 @@ const SummaryView = (() => {
         titleEl.textContent = tab.title || 'Untitled Tab';
         urlEl.textContent = tab.url || '';
 
+        const isBlocked = Boolean(
+          tab.isDomainBlocked ||
+          (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url))
+        );
+
         if (tab.isRestricted) {
           _isYouTubePage = false;
           headingEl.textContent = '📄 Page Summary';
@@ -251,7 +256,7 @@ const SummaryView = (() => {
           btnSummarize.disabled = true;
           btnSummarize.textContent = '⚡ Summarise This Page';
           btnSummarize.title = 'Cannot summarise browser-internal or Web Store pages';
-        } else if (tab.isDomainBlocked) {
+        } else if (isBlocked) {
           _isYouTubePage = false;
           headingEl.textContent = '📄 Page Summary';
           descEl.textContent = '🛑 This domain is protected by Sahayak Safety Rails. Sensitive financial/personal sites are never transmitted to external AI models.';
@@ -303,6 +308,20 @@ const SummaryView = (() => {
     const errorArea = _container.querySelector('#summary-error-area');
     const errorText = _container.querySelector('#summary-error-text');
     const resultContainer = _container.querySelector('#summary-result-container');
+
+    // Immediate safety rail check
+    const isCurrentlyBlocked = Boolean(
+      globalThis.SahayakBlocklists &&
+      typeof SahayakBlocklists.isDomainBlocked === 'function' &&
+      SahayakBlocklists.isDomainBlocked(_currentTabUrl)
+    );
+    if (isCurrentlyBlocked) {
+      if (errorText) errorText.textContent = '🛑 Blocked: Sahayak does not send content from blocked or sensitive domains to external AI services.';
+      if (errorArea) errorArea.style.display = 'flex';
+      btnSummarize.disabled = true;
+      btnSummarize.textContent = '🛑 Domain Blocked by Safety Rails';
+      return;
+    }
 
     _isSummarizing = true;
     const thisRequestId = ++_summaryRequestId;
@@ -370,8 +389,15 @@ const SummaryView = (() => {
       if (thisRequestId === _summaryRequestId) {
         _isSummarizing = false;
         loadingArea.style.display = 'none';
-        btnSummarize.disabled = false;
-        btnSummarize.textContent = _isYouTubePage ? '⚡ Summarise Video' : '⚡ Summarise This Page';
+        const isBlocked = Boolean(
+          globalThis.SahayakBlocklists &&
+          typeof SahayakBlocklists.isDomainBlocked === 'function' &&
+          SahayakBlocklists.isDomainBlocked(_currentTabUrl)
+        );
+        btnSummarize.disabled = isBlocked;
+        btnSummarize.textContent = isBlocked
+          ? '🛑 Domain Blocked by Safety Rails'
+          : (_isYouTubePage ? '⚡ Summarise Video' : '⚡ Summarise This Page');
       }
     }
   }
