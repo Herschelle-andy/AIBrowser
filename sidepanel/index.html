@@ -131,11 +131,7 @@
       </section>
 
       <section id="tab-profile" class="tab-panel" role="tabpanel">
-        <div class="panel-placeholder">
-          <span class="placeholder-icon">👤</span>
-          <h2>Your Profile</h2>
-          <p>Local profile memory for form-filling and drafts. Coming in Slice 4.1.</p>
-        </div>
+        <div id="profile-view-container"></div>
       </section>
 
       <section id="tab-skills" class="tab-panel" role="tabpanel">
@@ -166,6 +162,7 @@
   </div>
 
   <!-- ── Scripts ──────────────────────────────────────────── -->
+  <script src="../services/storage/profileStore.js"></script>
   <script src="components/SettingsView.js"></script>
   <script src="components/SummaryView.js"></script>
   <script src="components/ChatView.js"></script>
@@ -173,6 +170,7 @@
   <script src="components/ActionCard.js"></script>
   <script src="components/ActionLog.js"></script>
   <script src="components/AgentView.js"></script>
+  <script src="components/ProfileView.js"></script>
   <script src="app.js"></script>
 </body>
 

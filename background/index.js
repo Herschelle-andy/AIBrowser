@@ -17,6 +17,7 @@ importScripts(
   '/services/ai/retryWithFallback.js',
   '/services/ai/modelGateway.js',
   '/services/ai/promptBuilder.js',
+  '/services/storage/profileStore.js',
   '/services/state/checkpoint.js',
   '/services/state/agentStateMachine.js',
   '/background/contextMenus.js',
@@ -173,6 +174,38 @@ async function handleMessage(message, sender) {
       return { success: true };
     }
 
+    // ── User Profile Memory (Slice 4.1) ──────────────────────
+    case 'GET_PROFILE': {
+      let profile = null;
+      if (globalThis.ProfileStore && typeof ProfileStore.getProfile === 'function') {
+        profile = await ProfileStore.getProfile();
+      } else {
+        const stored = await chrome.storage.local.get('sahayak_user_profile');
+        profile = stored.sahayak_user_profile || null;
+      }
+      return { success: true, data: profile };
+    }
+
+    case 'SAVE_PROFILE': {
+      let saved = null;
+      if (globalThis.ProfileStore && typeof ProfileStore.saveProfile === 'function') {
+        saved = await ProfileStore.saveProfile(message.payload);
+      } else {
+        await chrome.storage.local.set({ sahayak_user_profile: message.payload });
+        saved = message.payload;
+      }
+      return { success: true, data: saved };
+    }
+
+    case 'CLEAR_PROFILE': {
+      if (globalThis.ProfileStore && typeof ProfileStore.clearProfile === 'function') {
+        await ProfileStore.clearProfile();
+      } else {
+        await chrome.storage.local.remove('sahayak_user_profile');
+      }
+      return { success: true };
+    }
+
     // ── Tab Info ─────────────────────────────────────────────
     case 'GET_ACTIVE_TAB_INFO': {
       const tab = await getActiveTab();
@@ -212,7 +245,21 @@ async function handleMessage(message, sender) {
         lang = prefs.sahayak_preferences?.language || 'en';
       }
 
-      const { systemPrompt, userPrompt } = PromptBuilder.buildContextActionPrompt(action, trimmedText, lang);
+      let userProfile = null;
+      if (action === 'draft_reply' || action === 'draftreply' || action === 'draft-reply') {
+        try {
+          if (globalThis.ProfileStore && typeof ProfileStore.getProfile === 'function') {
+            userProfile = await ProfileStore.getProfile();
+          } else {
+            const stored = await chrome.storage.local.get('sahayak_user_profile');
+            userProfile = stored.sahayak_user_profile || null;
+          }
+        } catch (e) {
+          console.warn('[Sahayak] Could not load profile for draft reply:', e);
+        }
+      }
+
+      const { systemPrompt, userPrompt } = PromptBuilder.buildContextActionPrompt(action, trimmedText, lang, userProfile);
 
       const result = await ModelGateway.queryAI({
         prompt: userPrompt,
@@ -984,11 +1031,24 @@ async function runAgentStep(skipNote = null) {
       });
     }
 
+    // Load user profile memory for form filling & personal context (Slice 4.1)
+    let userProfile = null;
+    try {
+      if (globalThis.ProfileStore && typeof ProfileStore.getProfile === 'function') {
+        userProfile = await ProfileStore.getProfile();
+      } else {
+        const stored = await chrome.storage.local.get('sahayak_user_profile');
+        userProfile = stored.sahayak_user_profile || null;
+      }
+    } catch (e) {
+      console.warn('[Sahayak] Could not load profile for agent action loop:', e);
+    }
+
     const { systemPrompt, userPrompt } = PromptBuilder.buildAgentActionPrompt(
       goal,
       actionMap,
       previousActions,
-      null, // userProfile injected in Slice 4.1
+      userProfile,
       lang
     );
 

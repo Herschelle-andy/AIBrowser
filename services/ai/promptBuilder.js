@@ -360,18 +360,47 @@
   }
 
   /**
-   * Build prompt for drafting a reply to selected message (Slice 2.2 & Edge case 2.2.5).
+   * Build prompt for drafting a reply to selected message (Slice 2.2 & Slice 4.1).
+   * Incorporates tone preference and sender name/bio from local user profile.
    *
    * @param {string} text
    * @param {string} [language='en']
+   * @param {Object} [userProfile=null] - Optional user profile memory
    * @returns {{ systemPrompt: string, userPrompt: string }}
    */
-  function buildDraftReplyPrompt(text, language = 'en') {
+  function buildDraftReplyPrompt(text, language = 'en', userProfile = null) {
     const langRule = getLanguageInstruction(language);
-    const systemPrompt = `You are Sahayak, an expert communication assistant. ${langRule}`;
+
+    let toneInstruction = 'Maintain a polite, helpful, and professional tone.';
+    const profileGuidelines = [];
+
+    if (userProfile && typeof userProfile === 'object') {
+      if (userProfile.preferredTone) {
+        const toneMap = {
+          concise: 'Be concise, brief, and straight to the point.',
+          detailed: 'Be detailed, comprehensive, and thoroughly explanatory.',
+          formal: 'Maintain a formal, polite, and professional tone.',
+          casual: 'Maintain a warm, casual, and friendly conversational tone.'
+        };
+        toneInstruction = toneMap[userProfile.preferredTone] || `Respond in a ${userProfile.preferredTone} tone.`;
+      }
+      if (userProfile.fullName) {
+        profileGuidelines.push(`The author of this reply is ${userProfile.fullName}. Sign off with their name if a signature is appropriate.`);
+      }
+      if (userProfile.bio) {
+        profileGuidelines.push(`Author context / bio: ${userProfile.bio}`);
+      }
+    }
+
+    const systemPrompt = [
+      'You are Sahayak, an expert communication assistant.',
+      langRule,
+      toneInstruction,
+      profileGuidelines.join(' ')
+    ].filter(Boolean).join(' ');
 
     const userPrompt = [
-      'Draft a polite, professional reply to the following message:',
+      'Draft a reply to the following message:',
       '',
       text,
       '',
@@ -382,14 +411,15 @@
   }
 
   /**
-   * Generic router for context menu actions (Slice 2.2).
+   * Generic router for context menu actions (Slice 2.2 & Slice 4.1).
    *
    * @param {string} action - 'explain' | 'translate' | 'draft_reply' | 'draft-reply'
    * @param {string} text
    * @param {string} [language='en']
+   * @param {Object} [userProfile=null]
    * @returns {{ systemPrompt: string, userPrompt: string }}
    */
-  function buildContextActionPrompt(action, text, language = 'en') {
+  function buildContextActionPrompt(action, text, language = 'en', userProfile = null) {
     const normalized = (action || '').toLowerCase().replace(/-/g, '_');
     switch (normalized) {
       case 'explain':
@@ -398,7 +428,7 @@
         return buildTranslatePrompt(text, language);
       case 'draft_reply':
       case 'draftreply':
-        return buildDraftReplyPrompt(text, language);
+        return buildDraftReplyPrompt(text, language, userProfile);
       default:
         return buildExplainPrompt(text, language);
     }
@@ -515,16 +545,57 @@
       return parts.join(' ');
     }).join('\n');
 
-    // Optional user profile context (Slice 4.1 readiness)
+    // User profile context (Slice 4.1)
     let profileBlock = '';
     if (userProfile && typeof userProfile === 'object') {
-      profileBlock = [
-        '<USER_PROFILE>',
-        JSON.stringify(userProfile, null, 2),
-        '</USER_PROFILE>',
-        ''
-      ].join('\n');
+      let cleanProfile = null;
+      if (typeof ProfileStore !== 'undefined' && ProfileStore.formatProfileForPrompt) {
+        cleanProfile = ProfileStore.formatProfileForPrompt(userProfile);
+      } else {
+        // Fallback filtering of empty fields if ProfileStore is not in scope
+        const filtered = {};
+        for (const [k, v] of Object.entries(userProfile)) {
+          if (v !== '' && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)) {
+            filtered[k] = v;
+          }
+        }
+        if (Object.keys(filtered).length > 0) cleanProfile = filtered;
+      }
+
+      if (cleanProfile) {
+        profileBlock = [
+          'User Profile Memory (use this data when filling forms, inputs, or personal information):',
+          '<USER_PROFILE>',
+          JSON.stringify(cleanProfile, null, 2),
+          '</USER_PROFILE>',
+          ''
+        ].join('\n');
+      }
     }
+
+    const instructions = [
+      'Instructions:',
+      '1. Review the User Goal, the Actions Taken So Far, and the Available Interactive Elements.',
+      profileBlock
+        ? '2. If the goal involves filling forms, applications, or inputs, map relevant user details from <USER_PROFILE> (e.g. fullName, email, phone, city, college, degree, major, graduationYear, skills, LinkedIn, GitHub, portfolio) into the corresponding input fields. Do not invent personal data.'
+        : null,
+      '3. Propose the single next logical browser action to make progress toward the goal.',
+      '4. Allowed action types: "click", "type", "select", "scroll", "done".',
+      '   - "click": must provide targetElementId (numeric ID from elements list)',
+      '   - "type": must provide targetElementId and value (string to type)',
+      '   - "select": must provide targetElementId and value (option string to select)',
+      '   - "scroll": value should be "down" or "up"',
+      '   - "done": if the goal is completed or no further action is needed',
+      '5. Set isConsequential: true if this action submits a form, executes a purchase, deletes data, transfers money, or alters external state.',
+      '6. Respond with valid JSON in this exact structure:',
+      '{',
+      '  "action": "click" | "type" | "select" | "scroll" | "done",',
+      '  "targetElementId": <number or null>,',
+      '  "value": "<string or null>",',
+      '  "reasoning": "<one-sentence explanation of why this step was chosen>",',
+      '  "isConsequential": true | false',
+      '}'
+    ].filter(Boolean);
 
     const userPrompt = [
       `User Goal: "${goal}"`,
@@ -542,24 +613,7 @@
       elementsList || '(No interactive elements found on this page)',
       '--- END ELEMENTS ---',
       '',
-      'Instructions:',
-      '1. Review the User Goal, the Actions Taken So Far, and the Available Interactive Elements.',
-      '2. Propose the single next logical browser action to make progress toward the goal.',
-      '3. Allowed action types: "click", "type", "select", "scroll", "done".',
-      '   - "click": must provide targetElementId (numeric ID from elements list)',
-      '   - "type": must provide targetElementId and value (string to type)',
-      '   - "select": must provide targetElementId and value (option string to select)',
-      '   - "scroll": value should be "down" or "up"',
-      '   - "done": if the goal is completed or no further action is needed',
-      '4. Set isConsequential: true if this action submits a form, executes a purchase, deletes data, transfers money, or alters external state.',
-      '5. Respond with valid JSON in this exact structure:',
-      '{',
-      '  "action": "click" | "type" | "select" | "scroll" | "done",',
-      '  "targetElementId": <number or null>,',
-      '  "value": "<string or null>",',
-      '  "reasoning": "<one-sentence explanation of why this step was chosen>",',
-      '  "isConsequential": true | false',
-      '}'
+      instructions.join('\n')
     ].filter(Boolean).join('\n');
 
     return { systemPrompt, userPrompt };

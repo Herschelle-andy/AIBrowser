@@ -64,6 +64,12 @@
       AgentView.render(agentViewContainer);
     }
 
+    // Render the local profile view (Slice 4.1)
+    const profileViewContainer = document.getElementById('profile-view-container');
+    if (profileViewContainer && window.ProfileView) {
+      ProfileView.render(profileViewContainer);
+    }
+
     // Refresh active tab info when switching or updating tabs
     if (chrome.tabs && chrome.tabs.onActivated) {
       chrome.tabs.onActivated.addListener(() => {
@@ -231,14 +237,22 @@
     try {
       let lang = 'en';
       if (chrome.storage && chrome.storage.local) {
-        const stored = await chrome.storage.local.get('sahayak_preferences');
-        if (stored.sahayak_preferences?.language) {
+        // Read from profile's preferredLanguage as default (Slice 4.1)
+        const stored = await chrome.storage.local.get(['sahayak_user_profile', 'sahayak_preferences']);
+        if (stored.sahayak_user_profile?.preferredLanguage) {
+          lang = stored.sahayak_user_profile.preferredLanguage;
+        } else if (stored.sahayak_preferences?.language) {
           lang = stored.sahayak_preferences.language;
         }
       } else {
-        const response = await chrome.runtime.sendMessage({ type: 'GET_PREFERENCES' });
-        if (response.success && response.data?.language) {
-          lang = response.data.language;
+        const profileRes = await chrome.runtime.sendMessage({ type: 'GET_PROFILE' });
+        if (profileRes?.success && profileRes?.data?.preferredLanguage) {
+          lang = profileRes.data.preferredLanguage;
+        } else {
+          const response = await chrome.runtime.sendMessage({ type: 'GET_PREFERENCES' });
+          if (response?.success && response?.data?.language) {
+            lang = response.data.language;
+          }
         }
       }
 
