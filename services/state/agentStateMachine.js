@@ -128,6 +128,28 @@
       throw new Error(`Invalid agent state transition: ${currentState} → ${nextState}`);
     }
 
+    // Safety check verification before AWAITING_APPROVAL (Slice 4.3)
+    if (nextState === AgentState.AWAITING_APPROVAL) {
+      const action = updates.currentAction || currentContext.currentAction;
+      const url = updates.url || currentContext.url || '';
+      const actionMap = updates.actionMap || currentContext.actionMap || {};
+      const guardrails = typeof SahayakGuardrails !== 'undefined'
+        ? SahayakGuardrails
+        : (typeof globalThis !== 'undefined' ? globalThis.SahayakGuardrails : null);
+
+      if (guardrails && typeof guardrails.checkSafety === 'function' && action) {
+        const safety = guardrails.checkSafety(action, url, actionMap);
+        if (!safety.allowed) {
+          action.isBlocked = true;
+          action.blockedReason = safety.reason;
+          action.blockType = safety.blockType;
+        }
+        if (safety.isConsequential) {
+          action.isConsequential = true;
+        }
+      }
+    }
+
     currentContext = {
       ...currentContext,
       ...updates,

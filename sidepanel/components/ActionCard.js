@@ -68,12 +68,18 @@
       onHighlight
     } = options;
 
+    const isBlocked = Boolean(action?.isBlocked);
+    const isConsequential = Boolean(action?.isConsequential) && !isBlocked;
+    const isDone = action?.action === 'done';
+
+    let cardClasses = 'action-card';
+    if (isBlocked) cardClasses += ' action-card-blocked';
+    else if (isConsequential) cardClasses += ' action-card-consequential';
+
     const card = document.createElement('div');
-    card.className = `action-card ${action?.isConsequential ? 'action-card-consequential' : ''}`;
+    card.className = cardClasses;
 
     const headline = formatActionHeadline(action, stepIndex, maxSteps);
-    const isConsequential = Boolean(action?.isConsequential);
-    const isDone = action?.action === 'done';
 
     card.innerHTML = `
       <div class="action-card-header">
@@ -83,6 +89,7 @@
             ${(action?.action || 'action').toUpperCase()}
           </span>
           ${dryRun ? '<span class="action-dryrun-badge">Dry-Run</span>' : ''}
+          ${isBlocked ? '<span class="action-blocked-badge">🛑 Blocked</span>' : ''}
         </div>
         ${action?.targetElementId ? `
           <button type="button" class="btn-highlight-target" title="Highlight element on page">
@@ -105,6 +112,18 @@
         <p class="action-reasoning-text">${escapeHtml(action?.reasoning || 'No reasoning provided.')}</p>
       </div>
 
+      ${isBlocked ? `
+        <div class="action-blocked-banner">
+          <div class="blocked-header">
+            <span class="blocked-icon">🛑</span>
+            <strong>Action Blocked by Safety Rails</strong>
+          </div>
+          <p class="blocked-desc">
+            ${escapeHtml(action?.blockedReason || 'Sahayak cannot perform this action for security and privacy reasons.')}
+          </p>
+        </div>
+      ` : ''}
+
       ${isConsequential ? `
         <div class="action-consequential-banner">
           <div class="consequential-header">
@@ -122,7 +141,14 @@
       ` : ''}
 
       <div class="action-card-actions">
-        ${isDone ? `
+        ${isBlocked ? `
+          <button type="button" class="btn btn-action-skip">
+            → Skip Action
+          </button>
+          <button type="button" class="btn btn-action-stop">
+            ✕ Stop Task
+          </button>
+        ` : (isDone ? `
           <button type="button" class="btn btn-primary btn-complete-task" style="width: 100%;">
             ✓ Finish Task
           </button>
@@ -136,7 +162,7 @@
           <button type="button" class="btn btn-action-stop">
             ✕ Stop
           </button>
-        `}
+        `)}
       </div>
     `;
 

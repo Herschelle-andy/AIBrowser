@@ -1954,6 +1954,21 @@ body {
   background: #fffbfa;
 }
 
+.action-card-blocked {
+  border-color: #d93025;
+  background: #fdf2f2;
+}
+
+.action-blocked-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #fce8e6;
+  color: #c5221f;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #f5c2bd;
+}
+
 .action-card-header {
   display: flex;
   align-items: center;
@@ -2073,6 +2088,39 @@ body {
 
 .action-reasoning-text {
   display: inline;
+}
+
+/* Action Blocked Banner (Slice 4.3) */
+.action-blocked-banner {
+  background: #fce8e6;
+  border: 1.5px solid #d93025;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  animation: fadeIn 0.2s ease;
+}
+
+.blocked-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #c5221f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.blocked-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.blocked-desc {
+  font-size: 11px;
+  color: #801311;
+  line-height: 1.35;
 }
 
 /* Consequential Action Banner */

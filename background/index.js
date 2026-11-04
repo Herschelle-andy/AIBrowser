@@ -19,6 +19,9 @@ importScripts(
   '/services/ai/promptBuilder.js',
   '/services/storage/profileStore.js',
   '/services/storage/skillsStore.js',
+  '/safety/blocklists.js',
+  '/safety/consequential.js',
+  '/safety/guardrails.js',
   '/services/state/checkpoint.js',
   '/services/state/agentStateMachine.js',
   '/background/contextMenus.js',
@@ -306,10 +309,11 @@ async function handleMessage(message, sender) {
         }
 
         const isRestricted = isRestrictedUrl(tab.url);
+        const isDomainBlocked = Boolean(globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url));
         let selectedText = '';
         let pageContent = '';
 
-        if (!isRestricted) {
+        if (!isRestricted && !isDomainBlocked) {
           try {
             await ensureContentScriptInjected(tab.id);
             const selRes = await chrome.tabs.sendMessage(tab.id, { type: 'GET_SELECTED_TEXT' });
@@ -337,6 +341,7 @@ async function handleMessage(message, sender) {
             url: tab.url,
             title: tab.title,
             isRestricted,
+            isDomainBlocked,
             selectedText,
             pageContent
           }
@@ -356,16 +361,25 @@ async function handleMessage(message, sender) {
         return { success: false, error: { code: 'NO_TAB', message: 'No active tab found.' } };
       }
       const restricted = isRestrictedUrl(tab.url);
+      const isDomainBlocked = Boolean(globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url));
       const isYouTube = isYouTubeUrl(tab.url);
       return {
         success: true,
-        data: { tabId: tab.id, url: tab.url, title: tab.title, isRestricted: restricted, isYouTube }
+        data: { tabId: tab.id, url: tab.url, title: tab.title, isRestricted: restricted, isDomainBlocked, isYouTube }
       };
     }
 
     // ── AI: Context Menu Quick Actions (Slice 2.2) ───────────
     case 'EXECUTE_CONTEXT_ACTION': {
       const { action = 'explain', text, language } = message.payload || {};
+
+      const currentTab = await getActiveTab();
+      if (currentTab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(currentTab.url)) {
+        return {
+          success: false,
+          error: { code: 'DOMAIN_BLOCKED', message: 'Sahayak does not send content from sensitive pages to external AI services.' }
+        };
+      }
 
       if (!text || text.trim().length === 0) {
         return {
@@ -428,6 +442,14 @@ async function handleMessage(message, sender) {
     // ── AI: Explain Text (Slice 1.2) ────────────────────────
     case 'EXPLAIN_TEXT': {
       const { text, language } = message.payload || {};
+
+      const currentTab = await getActiveTab();
+      if (currentTab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(currentTab.url)) {
+        return {
+          success: false,
+          error: { code: 'DOMAIN_BLOCKED', message: 'Sahayak does not send content from sensitive pages to external AI services.' }
+        };
+      }
 
       if (!text || text.trim().length === 0) {
         return {
@@ -492,6 +514,16 @@ async function handleMessage(message, sender) {
     // ── Screenshot & Ask (Slice 2.3) ──────────────────────────
     case 'CAPTURE_SCREENSHOT': {
       try {
+        const tab = await getActiveTab();
+        if (tab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+          return {
+            success: false,
+            error: {
+              code: 'DOMAIN_BLOCKED',
+              message: 'Sahayak does not capture screenshots on sensitive banking or payment pages.'
+            }
+          };
+        }
         const dataUrl = await TabCapture.captureTab();
         return { success: true, data: { dataUrl } };
       } catch (err) {
@@ -504,6 +536,17 @@ async function handleMessage(message, sender) {
 
     case 'SCREENSHOT_ASK': {
       const { image, question, language } = message.payload || {};
+
+      const tab = await getActiveTab();
+      if (tab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+        return {
+          success: false,
+          error: {
+            code: 'DOMAIN_BLOCKED',
+            message: 'Sahayak does not analyze screenshots from sensitive banking or payment pages.'
+          }
+        };
+      }
 
       if (!image) {
         return {
@@ -734,6 +777,12 @@ async function handleForwardToTab(message) {
         error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
       };
     }
+    if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+      return {
+        success: false,
+        error: { code: 'DOMAIN_BLOCKED', message: '🛑 Blocked: Sahayak cannot act on banking, payment, government ID, or sensitive financial pages.' }
+      };
+    }
     tabId = tab.id;
   }
 
@@ -815,6 +864,12 @@ async function handleFindElement(payload = {}) {
       return {
         success: false,
         error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot interact with system or internal browser pages.' }
+      };
+    }
+    if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+      return {
+        success: false,
+        error: { code: 'DOMAIN_BLOCKED', message: '🛑 Blocked: Sahayak cannot act on banking, payment, government ID, or sensitive financial pages.' }
       };
     }
     tabId = tab.id;
@@ -1068,18 +1123,34 @@ async function handleAgentStart(payload = {}) {
   }
 
   let tabId = payload.tabId;
+  let tab = null;
   if (!tabId) {
-    const tab = await getActiveTab();
+    tab = await getActiveTab();
     if (!tab || !tab.id) {
       return { success: false, error: { code: 'NO_TAB', message: 'No active browser tab found.' } };
     }
-    if (isRestrictedUrl(tab.url)) {
-      return {
-        success: false,
-        error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot automate internal browser or system pages.' }
-      };
-    }
     tabId = tab.id;
+  } else {
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (e) {}
+  }
+
+  if (tab && isRestrictedUrl(tab.url)) {
+    return {
+      success: false,
+      error: { code: 'RESTRICTED_URL', message: 'Sahayak cannot automate internal browser or system pages.' }
+    };
+  }
+
+  if (tab && globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+    return {
+      success: false,
+      error: {
+        code: 'DOMAIN_BLOCKED',
+        message: '🛑 Blocked: Sahayak cannot act on banking, payment, government ID, or sensitive financial pages.'
+      }
+    };
   }
 
   // Reset any active state
@@ -1236,14 +1307,25 @@ async function runAgentStep(skipNote = null) {
       throw new Error('AI model proposed an unreadable action structure.');
     }
 
-    // 3. Safety Check
+    // 3. Safety Check (§12, Slice 4.3)
     await AgentStateMachine.transitionTo(AgentStateMachine.AgentState.SAFETY_CHECK, {
       statusMessage: `Step ${stepCount}/${maxSteps}: Checking safety rails…`
     });
 
-    const targetEl = parsed.targetElementId ? actionMap.elements.find((e) => e.id === parsed.targetElementId) : null;
-    const isConsequential = checkIsConsequential(targetEl, parsed);
-    parsed.isConsequential = isConsequential;
+    const activeTab = await getActiveTab();
+    const currentUrl = activeTab?.url || actionMap.url || '';
+    const safety = (globalThis.SahayakGuardrails && typeof SahayakGuardrails.checkSafety === 'function')
+      ? SahayakGuardrails.checkSafety(parsed, currentUrl, actionMap)
+      : { allowed: true, isConsequential: checkIsConsequential(targetEl, parsed) };
+
+    if (!safety.allowed) {
+      parsed.isBlocked = true;
+      parsed.blockedReason = safety.reason;
+      parsed.blockType = safety.blockType;
+    }
+    if (safety.isConsequential) {
+      parsed.isConsequential = true;
+    }
 
     // Highlight proposed element
     if (parsed.targetElementId) {
@@ -1284,6 +1366,14 @@ async function handleAgentApprove(payload = {}) {
 
   const action = state.currentAction;
   const stepIndex = state.stepCount;
+
+  // Execution-time safety re-check (Edge case 4.3.10)
+  if (action?.isBlocked) {
+    return {
+      success: false,
+      error: { code: 'ACTION_BLOCKED', message: action.blockedReason || 'This action is blocked by deterministic safety rails.' }
+    };
+  }
 
   // Record approval in history (§11.5)
   const history = [
@@ -1492,6 +1582,16 @@ async function handleSummarizePage(payload = {}) {
       error: {
         code: 'RESTRICTED_URL',
         message: 'Sahayak cannot read system or internal browser pages (such as chrome://, settings, or Web Store).'
+      }
+    };
+  }
+
+  if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+    return {
+      success: false,
+      error: {
+        code: 'DOMAIN_BLOCKED',
+        message: 'Sahayak does not send content from sensitive pages to external AI services.'
       }
     };
   }
@@ -1997,6 +2097,12 @@ async function handleChatQuery(payload = {}) {
   }
   if (isRestrictedUrl(tab.url)) {
     return { success: false, error: { code: 'RESTRICTED_URL', message: 'Cannot chat with internal browser or system pages.' } };
+  }
+  if (globalThis.SahayakBlocklists && typeof SahayakBlocklists.isDomainBlocked === 'function' && SahayakBlocklists.isDomainBlocked(tab.url)) {
+    return {
+      success: false,
+      error: { code: 'DOMAIN_BLOCKED', message: 'Sahayak does not send content from sensitive pages to external AI services.' }
+    };
   }
 
   let pageContext = { title: tab.title, url: tab.url, content: '' };
