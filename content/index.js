@@ -34,6 +34,12 @@
         break;
       }
 
+      case 'GET_SELECTED_TEXT': {
+        const sel = window.getSelection() ? window.getSelection().toString().trim() : '';
+        sendResponse({ success: true, text: sel });
+        break;
+      }
+
       case 'SCAN_ELEMENTS': {
         const scanner = globalThis.SahayakScanner || (typeof SahayakScanner !== 'undefined' ? SahayakScanner : null);
         if (!scanner) {

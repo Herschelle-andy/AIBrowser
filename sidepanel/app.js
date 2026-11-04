@@ -70,6 +70,12 @@
       ProfileView.render(profileViewContainer);
     }
 
+    // Render the one-click skills view (Slice 4.2)
+    const skillsViewContainer = document.getElementById('skills-view-container');
+    if (skillsViewContainer && window.SkillsView) {
+      SkillsView.render(skillsViewContainer);
+    }
+
     // Refresh active tab info when switching or updating tabs
     if (chrome.tabs && chrome.tabs.onActivated) {
       chrome.tabs.onActivated.addListener(() => {

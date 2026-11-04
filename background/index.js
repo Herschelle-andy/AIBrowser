@@ -18,6 +18,7 @@ importScripts(
   '/services/ai/modelGateway.js',
   '/services/ai/promptBuilder.js',
   '/services/storage/profileStore.js',
+  '/services/storage/skillsStore.js',
   '/services/state/checkpoint.js',
   '/services/state/agentStateMachine.js',
   '/background/contextMenus.js',
@@ -204,6 +205,148 @@ async function handleMessage(message, sender) {
         await chrome.storage.local.remove('sahayak_user_profile');
       }
       return { success: true };
+    }
+
+    // ── One-Click Skills Engine (Slice 4.2) ───────────────────
+    case 'GET_SKILLS': {
+      const skills = globalThis.SkillsStore
+        ? await SkillsStore.getSkills()
+        : [];
+      return { success: true, data: skills };
+    }
+
+    case 'SAVE_SKILL': {
+      if (!globalThis.SkillsStore) {
+        return { success: false, error: { message: 'Skills store not loaded.' } };
+      }
+      try {
+        const saved = await SkillsStore.saveSkill(message.payload);
+        return { success: true, data: saved };
+      } catch (err) {
+        return { success: false, error: { message: err.message } };
+      }
+    }
+
+    case 'DELETE_SKILL': {
+      if (!globalThis.SkillsStore) {
+        return { success: false, error: { message: 'Skills store not loaded.' } };
+      }
+      try {
+        await SkillsStore.deleteSkill(message.payload?.id);
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: { message: err.message } };
+      }
+    }
+
+    case 'IMPORT_SKILLS': {
+      if (!globalThis.SkillsStore) {
+        return { success: false, error: { message: 'Skills store not loaded.' } };
+      }
+      try {
+        const result = await SkillsStore.importSkills(message.payload?.jsonString);
+        return { success: true, data: result };
+      } catch (err) {
+        return { success: false, error: { message: err.message || 'Import failed.' } };
+      }
+    }
+
+    case 'EXECUTE_SKILL': {
+      const { prompt, systemPrompt, language } = message.payload || {};
+      if (!prompt || !prompt.trim()) {
+        return {
+          success: false,
+          error: { code: 'EMPTY_PROMPT', message: 'No prompt provided to execute.' }
+        };
+      }
+
+      let lang = language;
+      if (!lang) {
+        const prefs = await chrome.storage.local.get('sahayak_preferences');
+        lang = prefs.sahayak_preferences?.language || 'en';
+      }
+
+      const langRule = PromptBuilder.getLanguageInstruction(lang);
+      const sysPrompt = systemPrompt || `You are Sahayak, an intelligent and versatile browser assistant. ${langRule} Provide a helpful, structured, and clear response.`;
+
+      try {
+        const result = await ModelGateway.queryAI({
+          prompt: prompt.trim(),
+          systemPrompt: sysPrompt,
+          task: 'text',
+          temperature: 0.3,
+          maxTokens: 2048
+        });
+
+        return {
+          success: true,
+          data: {
+            text: result.text,
+            model: result.model,
+            provider: result.provider,
+            isFallback: result.isFallback
+          }
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: {
+            code: err.code || 'AI_ERROR',
+            message: err.message || 'Failed to execute skill.'
+          }
+        };
+      }
+    }
+
+    case 'GET_ACTIVE_PAGE_CONTEXT': {
+      try {
+        const tab = await getActiveTab();
+        if (!tab || !tab.id) {
+          return { success: false, error: { code: 'NO_TAB', message: 'No active tab.' } };
+        }
+
+        const isRestricted = isRestrictedUrl(tab.url);
+        let selectedText = '';
+        let pageContent = '';
+
+        if (!isRestricted) {
+          try {
+            await ensureContentScriptInjected(tab.id);
+            const selRes = await chrome.tabs.sendMessage(tab.id, { type: 'GET_SELECTED_TEXT' });
+            if (selRes?.success && selRes?.text) {
+              selectedText = selRes.text;
+            }
+          } catch (e) {
+            // Ignore selection extraction error
+          }
+
+          try {
+            const artRes = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_ARTICLE' });
+            if (artRes?.success && artRes?.data?.content) {
+              pageContent = artRes.data.content;
+            }
+          } catch (e) {
+            // Ignore article extraction error
+          }
+        }
+
+        return {
+          success: true,
+          data: {
+            tabId: tab.id,
+            url: tab.url,
+            title: tab.title,
+            isRestricted,
+            selectedText,
+            pageContent
+          }
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: { code: 'CONTEXT_ERROR', message: err.message || 'Could not fetch page context.' }
+        };
+      }
     }
 
     // ── Tab Info ─────────────────────────────────────────────
