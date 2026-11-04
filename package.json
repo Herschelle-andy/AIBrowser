@@ -1,0 +1,23 @@
+{
+  "name": "sahayak",
+  "version": "1.0.0",
+  "description": "Your browser AI assistant — reads, explains, sees, and acts with your approval.",
+  "main": "background/index.js",
+  "scripts": {
+    "test": "node scripts/run-tests.js",
+    "build:zip": "node scripts/build-zip.js"
+  },
+  "keywords": [
+    "ai",
+    "browser-extension",
+    "chrome-extension",
+    "gemini",
+    "groq",
+    "automation",
+    "manifest-v3",
+    "assistant"
+  ],
+  "author": "Sahayak Team",
+  "license": "MIT"
+}
+

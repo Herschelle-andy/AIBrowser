@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahayak — AI Browser Assistant</title>
+  <meta name="description" content="Your browser AI co-pilot — reads, explains, sees, and acts on web pages with your explicit approval. Manifest V3 Chrome Extension powered by Gemini and Groq.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --bg-card: #131b2e;
+      --bg-card-hover: #1a253e;
+      --border: #23314f;
+      --border-focus: #3b82f6;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #4f46e5;
+      --primary-light: #6366f1;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 12px;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: var(--primary-light);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    a:hover {
+      color: var(--accent);
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+      background: rgba(11, 15, 25, 0.85);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 70px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .logo-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .nav-links a:hover {
+      color: #fff;
+    }
+    .btn-header {
+      background: var(--primary);
+      color: #fff !important;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-header:hover {
+      background: var(--primary-light);
+      transform: translateY(-1px);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 350px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, rgba(6, 182, 212, 0.05) 50%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: #c7d2fe;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: 48px;
+      line-height: 1.15;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 18px;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 36px;
+    }
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.6);
+      transform: translateY(-2px);
+      color: #fff;
+    }
+    .btn-secondary {
+      background: var(--bg-card);
+      color: #e2e8f0;
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-focus);
+      color: #fff;
+      transform: translateY(-2px);
+    }
+
+    /* Key Metrics */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin: 60px 0;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+    }
+    .metric-val {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .metric-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Interactive Showcase Carousel */
+    .showcase {
+      margin: 80px 0;
+    }
+    .section-title {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+    .section-sub {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 16px;
+      margin-bottom: 40px;
+    }
+    .showcase-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+    }
+    .showcase-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      border-color: var(--primary-light);
+      color: #fff;
+    }
+    .showcase-display {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #090d16;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 24px;
+      min-height: 480px;
+    }
+    .showcase-img {
+      max-width: 100%;
+      height: auto;
+      max-height: 480px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    /* Feature Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin: 60px 0;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      transition: transform 0.2s, border-color 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(99, 102, 241, 0.5);
+    }
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+    .feature-card h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+    .feature-card p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .feature-card .tag {
+      display: inline-block;
+      margin-top: 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    /* Architecture / Safety highlight */
+    .safety-highlight {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.05) 100%);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 16px;
+      padding: 40px;
+      margin: 80px 0;
+    }
+    .safety-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-top: 24px;
+    }
+    .safety-item {
+      background: rgba(11, 15, 25, 0.7);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .safety-item h4 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      color: #fca5a5;
+      margin-bottom: 8px;
+    }
+    .safety-item p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Installation Steps */
+    .steps {
+      margin: 80px 0;
+    }
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .step-card {
+      display: flex;
+      gap: 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      align-items: flex-start;
+    }
+    .step-num {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .step-content h4 {
+      font-size: 16px;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+    .step-content p {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    code {
+      background: #090d16;
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+      color: #38bdf8;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 34px;
+      }
+      .nav-links {
+        display: none;
+      }
+      .step-card {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="container nav">
+      <div class="logo">
+        <span>🤖</span> Sahayak
+        <span class="logo-badge">v1.0.0</span>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#showcase">Showcase</a></li>
+        <li><a href="#safety">Safety</a></li>
+        <li><a href="#install">Install</a></li>
+      </ul>
+      <a href="https://github.com/your-username/sahayak/releases" class="btn-header">
+        <span>📦</span> Release ZIP
+      </a>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main class="container">
+    <section class="hero">
+      <div class="pill">
+        <span>⚡</span> Manifest V3 Native &bull; Gemini 2.5 Flash &bull; Groq Fallback
+      </div>
+      <h1>Your Browser AI Assistant.<br>Reads. Explains. Sees. Acts with Approval.</h1>
+      <p>
+        Sahayak lives directly in your Chrome side panel. It digests complex articles, answers visual questions from screenshots, fills out repetitive forms from your encrypted local profile, and runs browser tasks under strict deterministic supervision.
+      </p>
+      <div class="hero-actions">
+        <a href="#install" class="btn btn-primary">
+          <span>⬇️</span> Download &amp; Install v1.0.0
+        </a>
+        <a href="https://github.com/your-username/sahayak" class="btn btn-secondary">
+          <span>⭐</span> Star on GitHub
+        </a>
+      </div>
+    </section>
+
+    <!-- Key Metrics / Guarantees -->
+    <section class="metrics">
+      <div class="metric-card">
+        <div class="metric-val">100%</div>
+        <div class="metric-label">Client-Side Keys (No Intermediary)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">0</div>
+        <div class="metric-label">Autonomous Unapproved Actions</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">3-Part</div>
+        <div class="metric-label">Readability Brief (TL;DR, Points, Steps)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">0s</div>
+        <div class="metric-label">Groq Failover on 429 Quotas</div>
+      </div>
+    </section>
+
+    <!-- Visual Showcase / Carousel -->
+    <section id="showcase" class="showcase">
+      <h2 class="section-title">Experience Sahayak in Action</h2>
+      <p class="section-sub">Explore the core capabilities built across Phases 1 to 4.</p>
+
+      <div class="showcase-wrapper">
+        <div class="showcase-tabs">
+          <button class="tab-btn active" onclick="switchShowcase('summary')">📄 Intelligent Summary</button>
+          <button class="tab-btn" onclick="switchShowcase('agent')">🦾 Supervised Browser Agent</button>
+          <button class="tab-btn" onclick="switchShowcase('safety')">🛡️ Deterministic Safety Rails</button>
+        </div>
+
+        <div class="showcase-display">
+          <img id="showcase-img" class="showcase-img" src="../screenshots/summary.svg" alt="Sahayak Feature Showcase">
+        </div>
+      </div>
+    </section>
+
+    <!-- Core Features Grid -->
+    <section id="features">
+      <h2 class="section-title">Engineered for Everyday Power Browsing</h2>
+      <p class="section-sub">From quick article revisions to multi-step supervised automation.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">📄</div>
+          <h3>Structured 3-Part Brief</h3>
+          <p>Powered by Mozilla Readability. Strips web noise, navigation, and ads to deliver a clear TL;DR, 5 bullet points, and actionable next steps.</p>
+          <span class="tag">Phase 1 &bull; Reader</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💬</div>
+          <h3>Grounded In-Page Chat</h3>
+          <p>Ask anything about the active tab. Answers are grounded in the live DOM with fast follow-up suggestions and conversation history.</p>
+          <span class="tag">Phase 2 &bull; Context Grounding</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">👁️</div>
+          <h3>Multimodal Screenshot Q&amp;A</h3>
+          <p>Capture full pages or crop interactive visual regions. Gemini Flash inspects charts, flow diagrams, tables, and obscure layouts instantly.</p>
+          <span class="tag">Phase 2 &bull; Multimodal</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>Human-in-the-Loop Agent</h3>
+          <p>Scans clickable and input elements, numbers them with badges, and proposes structured actions. You approve every click, type, and select.</p>
+          <span class="tag">Phase 3 &bull; Supervised Agent</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">👤</div>
+          <h3>Local Profile Memory</h3>
+          <p>Save personal, academic, and professional info directly in <code>chrome.storage.local</code>. Never type your college, bio, or links again.</p>
+          <span class="tag">Phase 4 &bull; Memory</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>One-Click Saved Skills</h3>
+          <p>Pre-packaged and custom skills like Exam Notes, Hinglish translation, and Form Auto-fill. Export and import skills easily as JSON.</p>
+          <span class="tag">Phase 4 &bull; Customization</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Free-Tier Resilience</h3>
+          <p>Automatic exponential backoff with jitter on HTTP 429 quota exhaustion, seamlessly failing over to Groq Llama-3.1-8b-instant.</p>
+          <span class="tag">Phase 2 &bull; Resilience</span>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3>English &amp; Hinglish Support</h3>
+          <p>Toggle between formal English and natural Roman-script Hinglish at any time across summaries, chat responses, and draft replies.</p>
+          <span class="tag">Phase 1 &bull; Multilingual</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Safety & Security Highlight -->
+    <section id="safety" class="safety-highlight">
+      <h2 style="font-size: 26px; color: #fff; margin-bottom: 8px;">🛡️ Deterministic Safety Rails</h2>
+      <p style="color: var(--text-muted); font-size: 15px;">
+        Unlike probabilistic AI wrappers, Sahayak enforces hard deterministic code rules before any action is suggested or executed.
+      </p>
+
+      <div class="safety-grid">
+        <div class="safety-item">
+          <h4>🛑 Blocked Sensitive Domains</h4>
+          <p>Zero action or content transmission on netbanking, payment gateways, UPI portals, cryptocurrency exchanges, and government ID services.</p>
+        </div>
+        <div class="safety-item">
+          <h4>🔒 Blocked Credential Fields</h4>
+          <p>Hardcoded exclusion of passwords, PINs, OTPs, CVVs, card numbers, Aadhaar numbers, and SSNs. The agent physically cannot type into them.</p>
+        </div>
+        <div class="safety-item">
+          <h4>⚠️ Consequential Action Gate</h4>
+          <p>Submitting, paying, purchasing, deleting, or transferring triggers a high-visibility red warning banner requiring an explicit confirmation checkbox.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Steps -->
+    <section id="install" class="steps">
+      <h2 class="section-title">Quickstart Installation</h2>
+      <p class="section-sub">Get up and running in under 2 minutes without building or compiling.</p>
+
+      <div class="steps-list">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Download Release ZIP</h4>
+            <p>Download the latest <code>sahayak-v1.0.0.zip</code> from GitHub Releases and extract it to a directory on your machine.</p>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Open Chrome Extensions</h4>
+            <p>Navigate to <code>chrome://extensions</code> in your Chromium browser (Chrome, Brave, Edge, Arc) and enable <strong>Developer mode</strong> in the top-right corner.</p>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Load Unpacked Extension</h4>
+            <p>Click the <strong>Load unpacked</strong> button and select the extracted folder. Pin Sahayak to your browser toolbar for quick access.</p>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Configure Free Gemini API Key</h4>
+            <p>Click the extension icon to open the side panel, click <strong>⚙️ Settings</strong>, and paste your free key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>. Optionally add a Groq key for instant backup failover.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/your-username/sahayak">GitHub Repository</a>
+        <a href="https://github.com/your-username/sahayak/releases">Releases</a>
+        <a href="https://github.com/your-username/sahayak/blob/main/LICENSE">MIT License</a>
+        <a href="https://github.com/your-username/sahayak/blob/main/CHANGELOG.md">Changelog</a>
+      </div>
+      <p>&copy; 2026 Sahayak Team. Built with Google Gemini &amp; Chrome Manifest V3.</p>
+    </div>
+  </footer>
+
+  <script>
+    const images = {
+      summary: '../screenshots/summary.svg',
+      agent: '../screenshots/agent.svg',
+      safety: '../screenshots/safety.svg'
+    };
+
+    function switchShowcase(type) {
+      const img = document.getElementById('showcase-img');
+      if (img && images[type]) {
+        img.src = images[type];
+      }
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      const activeBtn = Array.from(buttons).find(b => b.getAttribute('onclick').includes(type));
+      if (activeBtn) activeBtn.classList.add('active');
+    }
+  </script>
+</body>
+</html>
+

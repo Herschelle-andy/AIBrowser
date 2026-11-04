@@ -140,7 +140,7 @@
       return true;
     }
 
-    const haystack = [
+    const rawHaystack = [
       element.name,
       element.placeholder,
       element.text,
@@ -149,7 +149,10 @@
       autocomplete
     ].filter(Boolean).join(' ');
 
-    return BLOCKED_INPUT_PATTERNS.some(pattern => pattern.test(haystack));
+    // Normalize underscores and hyphens into spaces so \b matches user_otp, pin_code, etc.
+    const normalized = rawHaystack.replace(/[_-]+/g, ' ');
+
+    return BLOCKED_INPUT_PATTERNS.some(pattern => pattern.test(normalized));
   }
 
   /**
