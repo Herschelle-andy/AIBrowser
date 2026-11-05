@@ -6,6 +6,7 @@
 [![Zero Build Dependencies](https://img.shields.io/badge/Dependencies-Zero_Pure_JS-06B6D4)](#-development--packaging)
 
 > **Your browser AI co-pilot** — reads, explains, sees, and acts on web pages with your explicit approval.
+> Link:- https://herschelle-andy.github.io/AIBrowser/
 
 Sahayak is a Chrome Extension (Manifest V3) that lives in your browser's side panel. Built with Google's **Gemini 2.5 Flash** and resilient failover via **Groq (Llama-3.1-8b)**, Sahayak digests dense articles, answers visual questions from screenshots, manages personal profiles for one-click form completion, and executes browser actions step-by-step under strict **deterministic safety rails**.
 
