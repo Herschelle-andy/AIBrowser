@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1A237E" />
+      <stop offset="100%" stop-color="#0D47A1" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f8f9fa" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" fill="url(#bg)" rx="16" />
+
+  <!-- Window Frame -->
+  <g transform="translate(100, 40)" filter="url(#shadow)">
+    <rect width="600" height="420" rx="12" fill="url(#cardGrad)" stroke="#E0E0E0" stroke-width="1" />
+    
+    <!-- Window Bar -->
+    <rect width="600" height="44" rx="12" fill="#FFFFFF" />
+    <circle cx="28" cy="22" r="6" fill="#FF5F56" />
+    <circle cx="48" cy="22" r="6" fill="#FFBD2E" />
+    <circle cx="68" cy="22" r="6" fill="#27C93F" />
+    <text x="300" y="27" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="600" fill="#5F6368" text-anchor="middle">🤖 Sahayak — Page Brief</text>
+
+    <!-- Content -->
+    <!-- TL;DR Card -->
+    <rect x="30" y="65" width="540" height="70" rx="8" fill="#E8F0FE" stroke="#1A73E8" stroke-width="1" />
+    <text x="50" y="90" font-family="sans-serif" font-size="14" font-weight="700" fill="#1A73E8">💡 TL;DR</text>
+    <text x="50" y="112" font-family="sans-serif" font-size="12" fill="#202124">Quantum computing has achieved a breakthrough in error mitigation, reducing qubit noise by 90%.</text>
+
+    <!-- Key Points Card -->
+    <rect x="30" y="150" width="540" height="150" rx="8" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="1" />
+    <text x="50" y="175" font-family="sans-serif" font-size="14" font-weight="700" fill="#202124">📌 Key Takeaways</text>
+    <text x="50" y="200" font-family="sans-serif" font-size="12" fill="#3C4043">1. Breakthrough published in Nature demonstrates fault-tolerant logical qubits.</text>
+    <text x="50" y="222" font-family="sans-serif" font-size="12" fill="#3C4043">2. Neutral-atom architecture achieves coherence times 10× longer than trapped ions.</text>
+    <text x="50" y="244" font-family="sans-serif" font-size="12" fill="#3C4043">3. Commercial cloud quantum processors will adopt this technique by Q4.</text>
+    <text x="50" y="266" font-family="sans-serif" font-size="12" fill="#3C4043">4. Algorithmic fidelity improved across Shor's and Grover's search benchmarks.</text>
+
+    <!-- What to do next -->
+    <rect x="30" y="315" width="540" height="85" rx="8" fill="#E6F4EA" stroke="#137333" stroke-width="1" />
+    <text x="50" y="340" font-family="sans-serif" font-size="14" font-weight="700" fill="#137333">🎯 What To Do Next</text>
+    <text x="50" y="362" font-family="sans-serif" font-size="12" fill="#202124">• Review Qiskit and Cirq SDK release notes for updated logical-qubit compiler passes.</text>
+    <text x="50" y="384" font-family="sans-serif" font-size="12" fill="#202124">• Check company cryptography roadmap for post-quantum TLS migration schedules.</text>
+  </g>
+</svg>
+

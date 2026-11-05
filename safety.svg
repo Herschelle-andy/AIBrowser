@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="safetyBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#49120D" />
+      <stop offset="100%" stop-color="#801311" />
+    </linearGradient>
+    <filter id="boxShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <rect width="800" height="500" fill="url(#safetyBg)" rx="16" />
+
+  <g transform="translate(100, 50)" filter="url(#boxShadow)">
+    <rect width="600" height="400" rx="12" fill="#FFFFFF" stroke="#F5C2BD" stroke-width="1.5" />
+    
+    <!-- Window Bar -->
+    <rect width="600" height="48" rx="12" fill="#FDF2F2" />
+    <circle cx="28" cy="24" r="6" fill="#D93025" />
+    <circle cx="48" cy="24" r="6" fill="#E0E0E0" />
+    <circle cx="68" cy="24" r="6" fill="#E0E0E0" />
+    <text x="300" y="29" font-family="sans-serif" font-size="13" font-weight="700" fill="#D93025" text-anchor="middle">🛑 Sahayak Deterministic Safety Rails</text>
+
+    <!-- Blocked Card Content -->
+    <rect x="35" y="75" width="530" height="85" rx="8" fill="#FCE8E6" stroke="#D93025" stroke-width="1.5" />
+    <text x="55" y="105" font-family="sans-serif" font-size="15" font-weight="700" fill="#C5221F">🛑 Action Blocked: Password Field Detected</text>
+    <text x="55" y="132" font-family="sans-serif" font-size="12" fill="#5C1D18">Deterministic Rule #12.4: Sahayak never types credentials, passwords, PINs, or OTPs.</text>
+
+    <!-- Hardcoded Checks Summary -->
+    <text x="40" y="195" font-family="sans-serif" font-size="14" font-weight="700" fill="#202124">Enforced Security Checks (Deterministic in JavaScript)</text>
+
+    <g transform="translate(40, 215)">
+      <!-- Check 1 -->
+      <circle cx="12" cy="12" r="10" fill="#E6F4EA" />
+      <text x="12" y="17" font-family="sans-serif" font-size="12" font-weight="800" fill="#137333" text-anchor="middle">✓</text>
+      <text x="32" y="16" font-family="sans-serif" font-size="13" font-weight="600" fill="#202124">Domain Blocklist:</text>
+      <text x="175" y="16" font-family="sans-serif" font-size="12" fill="#5F6368">Blocks all banking (SBI, HDFC, Chase), UPI, PayPal, and crypto portals.</text>
+
+      <!-- Check 2 -->
+      <circle cx="12" cy="47" r="10" fill="#E6F4EA" />
+      <text x="12" y="52" font-family="sans-serif" font-size="12" font-weight="800" fill="#137333" text-anchor="middle">✓</text>
+      <text x="32" y="51" font-family="sans-serif" font-size="13" font-weight="600" fill="#202124">Credential Guard:</text>
+      <text x="175" y="51" font-family="sans-serif" font-size="12" fill="#5F6368">Prevents inputs into passwords, OTPs, CVVs, card numbers, and Aadhaar.</text>
+
+      <!-- Check 3 -->
+      <circle cx="12" cy="82" r="10" fill="#E6F4EA" />
+      <text x="12" y="87" font-family="sans-serif" font-size="12" font-weight="800" fill="#137333" text-anchor="middle">✓</text>
+      <text x="32" y="86" font-family="sans-serif" font-size="13" font-weight="600" fill="#202124">Consequential Gate:</text>
+      <text x="175" y="86" font-family="sans-serif" font-size="12" fill="#5F6368">Submit, Pay, and Delete actions enforce mandatory confirmation checkboxes.</text>
+
+      <!-- Check 4 -->
+      <circle cx="12" cy="117" r="10" fill="#E6F4EA" />
+      <text x="12" y="122" font-family="sans-serif" font-size="12" font-weight="800" fill="#137333" text-anchor="middle">✓</text>
+      <text x="32" y="121" font-family="sans-serif" font-size="13" font-weight="600" fill="#202124">Human Approval:</text>
+      <text x="175" y="121" font-family="sans-serif" font-size="12" fill="#5F6368">No action can ever execute autonomously without an explicit user click.</text>
+    </g>
+  </g>
+</svg>
+
